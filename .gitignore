@@ -1,0 +1,9 @@
+log/
+*.log
+*.pid
+input_file/
+output_file/
+__pycache__/
+*.pyc
+.DS_Store
+
