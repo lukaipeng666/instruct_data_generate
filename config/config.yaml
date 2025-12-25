@@ -34,9 +34,10 @@ jwt:
 admin:
   # 默认管理员用户名
   username: "admin"
-  # 默认管理员密码（留空则自动生成随机密码）
-  # 生产环境请修改为强密码
-  password: "suanfazu2025"
+  # 默认管理员密码哈希值（使用 bcrypt 加密）
+  # 如需修改密码，请使用 bcrypt 生成新的哈希值替换此处
+  # 生成方式: python3 -c "import bcrypt; print(bcrypt.hashpw('你的密码'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'))"
+  password: "$2b$12$PAofQYRSUA3d9axVq/gVIOs6UTjalXW9Q0Rrm4xgoLG8JEa8rs3lO"
 
 # Redis 服务配置（用于模型调用限流和任务进度）
 redis_service:
