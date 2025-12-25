@@ -60,20 +60,37 @@ def create_user(db: Session, username: str, password: str, is_admin: bool = Fals
 
 def init_default_admin():
     """初始化默认管理员账号"""
+    import sys
+    import os
+    
+    # 添加配置模块路径
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+    from config import get_admin_config
+    
+    # 从 config.yaml 读取管理员配置
+    admin_config = get_admin_config()
+    admin_username = admin_config['username']
+    admin_password = admin_config['password']
+    
     db = SessionLocal()
     try:
-        # 检查是否已存在admin用户
-        admin_user = get_user_by_username(db, "admin")
+        # 检查是否已存在管理员用户
+        admin_user = get_user_by_username(db, admin_username)
         if not admin_user:
+            if admin_config['generated']:
+                print(f"⚠️  警告: config.yaml 中未设置 admin.password")
+                print(f"📝 生成的随机管理员密码: {admin_password}")
+                print(f"🔐 请立即记录此密码，或在 config.yaml 中设置 admin.password")
+            
             # 创建默认管理员
-            create_user(db, "admin", "suanfazu2025", is_admin=True)
-            print("默认管理员账号已创建: admin / suanfazu2025")
+            create_user(db, admin_username, admin_password, is_admin=True)
+            print(f"✅ 默认管理员账号已创建: {admin_username}")
         else:
             # 确保admin用户是管理员
             if not admin_user.is_admin:
                 admin_user.is_admin = True
                 db.commit()
-                print("已将admin用户更新为管理员")
+                print(f"已将 {admin_username} 用户更新为管理员")
             else:
                 print("管理员账号已存在")
     except Exception as e:

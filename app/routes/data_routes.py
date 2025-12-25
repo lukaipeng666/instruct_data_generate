@@ -48,51 +48,6 @@ def get_task_types(current_user=Depends(get_current_user)):
     })
 
 
-@router.get('/input_files')
-def get_input_files(current_user=Depends(get_current_user)):
-    """获取input_file目录下所有文件夹中的所有jsonl文件"""
-    input_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'input_file')
-    jsonl_files = []
-    
-    try:
-        if not os.path.exists(input_dir):
-            return JSONResponse({
-                'success': True,
-                'files': []
-            })
-        
-        # 遍历input_file目录下的所有文件夹
-        for root, dirs, files in os.walk(input_dir):
-            # 跳过input_file根目录本身，只处理子文件夹
-            if root == input_dir:
-                continue
-            
-            # 查找所有jsonl文件
-            for file in files:
-                if file.endswith('.jsonl'):
-                    file_path = os.path.join(root, file)
-                    # 获取相对于app目录的路径
-                    relative_path = os.path.relpath(file_path, os.path.dirname(os.path.dirname(__file__)))
-                    jsonl_files.append({
-                        'path': relative_path,
-                        'name': file,
-                        'folder': os.path.basename(root)
-                    })
-        
-        # 按文件夹和文件名排序
-        jsonl_files.sort(key=lambda x: (x['folder'], x['name']))
-        
-        return JSONResponse({
-            'success': True,
-            'files': jsonl_files
-        })
-    except Exception as e:
-        return JSONResponse({
-            'success': False,
-            'error': str(e)
-        }, status_code=500)
-
-
 @router.get('/data_files')
 async def get_data_files(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     """获取当前用户上传的数据文件列表（从数据库读取）"""

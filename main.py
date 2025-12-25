@@ -4,28 +4,26 @@
 """
 
 import os
-import time
+import sys
 import argparse
 import asyncio
+
+# 添加项目根目录到路径
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, PROJECT_ROOT)
+
 from develop.pipeline_gen import PipelineDataGenerator
+from config import get_default_services, get_default_model
 
 
 async def main():
-    # 默认服务列表
-    default_services = [
-        "http://localhost:6466/v1",
-        "http://localhost:6467/v1",
-        "http://localhost:6468/v1",
-        "http://localhost:6469/v1",
-        "http://localhost:6470/v1",
-        "http://localhost:6471/v1",
-        "http://localhost:6472/v1",
-        "http://localhost:6473/v1"
-    ]
+    # 从 config.yaml 读取默认服务列表和模型配置
+    default_services = get_default_services()
+    default_model = get_default_model()
     
     parser = argparse.ArgumentParser(description='分布式并行生成对话数据')
     parser.add_argument('--services', nargs='+', default=default_services, help='API服务地址列表')
-    parser.add_argument('--model', default='/data/models/Qwen3-32B', help='模型名称')
+    parser.add_argument('--model', default=default_model, help='模型名称')
     parser.add_argument('--batch-size', type=int, default=16, help='每个服务的批处理大小')
     parser.add_argument('--max-concurrent', type=int, default=16, help='每个服务的最大并发数')
     parser.add_argument('--min-score', type=int, default=8, help='最低评分要求(0-10)')

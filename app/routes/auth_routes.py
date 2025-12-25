@@ -80,11 +80,19 @@ async def register(request: Request, db: Session = Depends(get_db)):
                 detail="用户名长度必须在3-20个字符之间"
             )
         
-        # 验证密码长度
-        if len(password) < 6:
+        # 验证用户名格式（只允许字母、数字、下划线）
+        import re
+        if not re.match(r'^[a-zA-Z0-9_]+$', username):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="密码长度至少为6个字符"
+                detail="用户名只能包含字母、数字和下划线"
+            )
+        
+        # 验证密码长度
+        if len(password) < 6 or len(password) > 128:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="密码长度必须在6-128个字符之间"
             )
         
         # 检查用户名是否已存在

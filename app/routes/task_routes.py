@@ -10,8 +10,6 @@ import queue
 import threading
 import time
 import redis
-import yaml
-from pathlib import Path
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
@@ -29,6 +27,8 @@ from services.task_manager import (
 
 router = APIRouter(prefix='/api', tags=['任务管理'])
 
+# 导入统一配置模块
+from config import get_redis_config
 
 # Redis 客户端单例
 _redis_client = None
@@ -38,24 +38,13 @@ def get_redis_client():
     global _redis_client
     if _redis_client is None:
         try:
-            config_path = Path(__file__).parent.parent.parent / "config" / "config.yaml"
-            if config_path.exists():
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    config = yaml.safe_load(f) or {}
-            else:
-                config = {}
-            
-            redis_config = config.get('redis_service', {})
-            host = redis_config.get('host', 'localhost')
-            port = redis_config.get('port', 6379)
-            db = redis_config.get('db', 0)
-            password = redis_config.get('password', None)
+            redis_config = get_redis_config()
             
             _redis_client = redis.Redis(
-                host=host,
-                port=port,
-                db=db,
-                password=password,
+                host=redis_config['host'],
+                port=redis_config['port'],
+                db=redis_config['db'],
+                password=redis_config['password'],
                 decode_responses=True
             )
             # 测试连接
@@ -98,17 +87,53 @@ async def start_task(request: Request, current_user=Depends(get_current_user), d
                 'error': f'无效的数据库文件路径格式: {str(e)}'
             }, status_code=400)
         
+        # 验证文件是否存在且属于当前用户
+        from database.file_service import get_data_file_by_id
+        file_record = get_data_file_by_id(db, db_file_id, current_user.id)
+        if not file_record:
+            return JSONResponse({
+                'success': False,
+                'error': '文件不存在或无权访问'
+            }, status_code=404)
+        
+        # 从配置读取默认值
+        from config import get_default_services, get_default_model
+        
         # 如果提供了model_id，从数据库获取模型配置
-        model_path = data.get('model')
-        services = data.get('services', ['http://localhost:6466/v1'])
+        model_path = data.get('model') or get_default_model()
+        services = data.get('services') or get_default_services()
+        
+        # 辅助函数：安全解析整数
+        def safe_int(value, default, min_val=None, max_val=None):
+            try:
+                result = int(value) if value is not None else default
+                if min_val is not None and result < min_val:
+                    result = min_val
+                if max_val is not None and result > max_val:
+                    result = max_val
+                return result
+            except (ValueError, TypeError):
+                return default
+        
+        # 辅助函数：安全解析浮点数
+        def safe_float(value, default, min_val=None, max_val=None):
+            try:
+                result = float(value) if value is not None else default
+                if min_val is not None and result < min_val:
+                    result = min_val
+                if max_val is not None and result > max_val:
+                    result = max_val
+                return result
+            except (ValueError, TypeError):
+                return default
         
         # 模型配置相关参数（默认值）
         model_api_key = data.get('api_key', '')
-        model_is_vllm = data.get('is_vllm', True)
-        model_top_p = float(data.get('top_p', 1.0))
-        model_max_tokens = int(data.get('max_tokens', 8192))
-        model_timeout = int(data.get('timeout', 600))
-        model_max_concurrent = int(data.get('max_concurrent', 16))
+        model_is_vllm = bool(data.get('is_vllm', True))
+        model_top_p = safe_float(data.get('top_p'), 1.0, 0.0, 1.0)
+        model_max_tokens = safe_int(data.get('max_tokens'), 8192, 1, 65536)
+        model_timeout = safe_int(data.get('timeout'), 600, 10, 3600)
+        model_max_concurrent = safe_int(data.get('max_concurrent'), 16, 1, 100)
         
         if data.get('model_id'):
             model_config = db.query(ModelConfig).filter(
@@ -154,15 +179,15 @@ async def start_task(request: Request, current_user=Depends(get_current_user), d
         params = {
             'services': services,
             'model': model_path,
-            'batch_size': int(data.get('batch_size', 16)),
+            'batch_size': safe_int(data.get('batch_size'), 16, 1, 100),
             'max_concurrent': model_max_concurrent,
-            'min_score': int(data.get('min_score', 10)),
-            'task_type': data.get('task_type', 'general'),
-            'variants_per_sample': int(data.get('variants_per_sample', 3)),
-            'data_rounds': int(data.get('data_rounds', 10)),
-            'retry_times': int(data.get('retry_times', 3)),
-            'special_prompt': data.get('special_prompt', ''),
-            'directions': data.get('directions', '信用卡年费 股票爆仓 基金赎回'),
+            'min_score': safe_int(data.get('min_score'), 10, 0, 10),
+            'task_type': str(data.get('task_type', 'general'))[:50],  # 限制长度
+            'variants_per_sample': safe_int(data.get('variants_per_sample'), 3, 1, 20),
+            'data_rounds': safe_int(data.get('data_rounds'), 10, 1, 100),
+            'retry_times': safe_int(data.get('retry_times'), 3, 0, 10),
+            'special_prompt': str(data.get('special_prompt', ''))[:5000],  # 限制长度
+            'directions': str(data.get('directions', '信用卡年费 股票爆仓 基金赎回'))[:1000],  # 限制长度
             # 模型调用相关参数（使用模型配置中的值）
             'api_key': model_api_key,
             'is_vllm': model_is_vllm,

@@ -76,7 +76,7 @@ bowengen/
 
 ### 后端
 - Python 3.8+
-- Redis (可选，用于任务进度追踪)
+- **Redis** (必需，用于任务进度追踪和模型调用限流)
 
 ### 前端
 - Node.js 16+
@@ -112,15 +112,149 @@ npm install
 cd ..
 ```
 
-### 3. 配置
+### 3. 安装 Redis
 
-编辑 `config/config.yaml`：
+Redis 是系统必需组件，用于任务进度追踪和模型调用限流。请根据您的操作系统选择安装方式：
+
+#### macOS
+
+**使用 Homebrew（推荐）**：
+```bash
+# 安装 Redis
+brew install redis
+
+# 启动 Redis 服务（后台运行）
+brew services start redis
+
+# 或手动启动（前台运行）
+redis-server
+```
+
+**验证安装**：
+```bash
+redis-cli ping
+# 应返回: PONG
+```
+
+#### Linux (Ubuntu/Debian)
+
+```bash
+# 更新包列表
+sudo apt update
+
+# 安装 Redis
+sudo apt install redis-server
+
+# 启动 Redis 服务
+sudo systemctl start redis-server
+
+# 设置开机自启（可选）
+sudo systemctl enable redis-server
+
+# 验证安装
+redis-cli ping
+# 应返回: PONG
+```
+
+#### Linux (CentOS/RHEL)
+
+```bash
+# 安装 EPEL 仓库（如果未安装）
+sudo yum install epel-release
+
+# 安装 Redis
+sudo yum install redis
+
+# 启动 Redis 服务
+sudo systemctl start redis
+
+# 设置开机自启（可选）
+sudo systemctl enable redis
+
+# 验证安装
+redis-cli ping
+# 应返回: PONG
+```
+
+#### Windows
+
+**方法 1：使用 WSL2（推荐）**
+
+在 WSL2 中按照 Linux 安装步骤操作。
+
+**方法 2：使用 Memurai（Redis 的 Windows 替代品）**
+
+1. 访问 [Memurai 官网](https://www.memurai.com/)
+2. 下载并安装 Memurai Developer Edition（免费）
+3. 安装后会自动启动服务
+
+**方法 3：使用 Docker**
+
+```bash
+# 拉取 Redis 镜像
+docker pull redis
+
+# 运行 Redis 容器
+docker run -d -p 6379:6379 --name redis redis
+
+# 验证安装
+docker exec -it redis redis-cli ping
+# 应返回: PONG
+```
+
+#### 验证 Redis 连接
+
+安装完成后，可以通过以下命令验证 Redis 是否正常运行：
+
+```bash
+# 测试连接
+redis-cli ping
+
+# 如果返回 PONG，说明 Redis 运行正常
+# 如果连接失败，请检查：
+# 1. Redis 服务是否已启动
+# 2. 端口 6379 是否被占用
+# 3. 防火墙设置是否允许连接
+```
+
+> 💡 **提示**：如果使用 `./start.sh` 启动脚本，脚本会自动检查并尝试启动 Redis（如果已安装但未运行）。
+
+### 4. 配置
+
+所有配置项集中在 `config/config.yaml` 中管理：
 
 ```yaml
+# 服务配置文件
+
 # Web 服务配置
 web_service:
   host: "0.0.0.0"
   port: 5000
+
+# 前端配置
+frontend:
+  url: "http://localhost:3000"
+
+# CORS 配置（跨域访问）
+cors:
+  origins:
+    - "http://localhost:3000"
+  allow_credentials: true
+  allow_methods: ["*"]
+  allow_headers: ["*"]
+
+# JWT 认证配置
+jwt:
+  # 密钥（生产环境请修改为随机字符串，留空则自动生成）
+  secret_key: ""
+  algorithm: "HS256"
+  expire_minutes: 43200  # 30天
+
+# 管理员配置
+admin:
+  username: "admin"
+  # 密码（留空则自动生成随机密码，生产环境请设置强密码）
+  password: ""
 
 # Redis 服务配置（用于模型调用限流和任务进度）
 redis_service:
@@ -130,9 +264,38 @@ redis_service:
   password: null
   max_wait_time: 300
   default_max_concurrency: 16
+
+# 默认模型服务配置
+model_services:
+  default_services:
+    - "http://localhost:6466/v1"
+    - "http://localhost:6467/v1"
+    - "http://localhost:6468/v1"
+    - "http://localhost:6469/v1"
+    - "http://localhost:6470/v1"
+    - "http://localhost:6471/v1"
+    - "http://localhost:6472/v1"
+    - "http://localhost:6473/v1"
+  default_model: "/data/models/Qwen3-32B"
+  default_api_key: ""
 ```
 
-### 4. 启动服务
+#### 配置说明
+
+| 配置项 | 说明 |
+|--------|------|
+| `web_service.port` | 后端 API 端口 |
+| `frontend.url` | 前端访问地址 |
+| `cors.origins` | 允许的跨域源列表 |
+| `jwt.secret_key` | JWT 密钥（生产环境必须设置固定值） |
+| `jwt.expire_minutes` | Token 过期时间 |
+| `admin.password` | 默认管理员密码（首次启动时使用） |
+| `redis_service.*` | Redis 连接配置 |
+| `model_services.default_services` | 默认模型服务地址列表 |
+
+> ⚠️ **安全提示**：生产环境请务必设置 `jwt.secret_key` 和 `admin.password`
+
+### 5. 启动服务
 
 ```bash
 # 一键启动（推荐）
@@ -146,31 +309,12 @@ python -m uvicorn app.app:app --host 0.0.0.0 --port 5000
 cd frontend && npm run dev
 ```
 
-### 5. 访问系统
+### 6. 访问系统
 
 - 前端界面：http://localhost:3000
 - API 文档：http://localhost:5000/docs
 - 后端 API：http://localhost:5000
 
-## 命令行使用
-
-除了 Web 界面，还支持命令行方式运行：
-
-```bash
-python main.py \
-    --services http://localhost:6466/v1 http://localhost:6467/v1 \
-    --model /data/models/Qwen3-32B \
-    --file-id 1 \
-    --user-id 1 \
-    --task-id my_task \
-    --batch-size 16 \
-    --max-concurrent 16 \
-    --min-score 8 \
-    --task-type entity_extraction \
-    --variants-per-sample 3 \
-    --data-rounds 10 \
-    --directions "信用卡年费" "股票爆仓" "基金赎回"
-```
 
 ### 命令行参数说明
 

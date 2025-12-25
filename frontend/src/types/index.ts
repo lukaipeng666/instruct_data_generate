@@ -36,12 +36,6 @@ export interface Task {
   run_time: number;
 }
 
-export interface InputFile {
-  path: string;
-  name: string;
-  folder: string;
-}
-
 // 管理员相关类型
 export interface AdminUser {
   id: number;

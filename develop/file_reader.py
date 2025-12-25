@@ -6,7 +6,6 @@
 
 import json
 import math
-from pathlib import Path
 from typing import List, Dict, Any, Tuple
 import sys
 import os
@@ -113,74 +112,4 @@ class FileReader:
         return parts
 
 
-class OutputWriter:
-    """输出写入器，负责写入生成的数据"""
-    
-    @staticmethod
-    def write_jsonl(file_path: str, data: List[Dict[str, Any]], 
-                    mode: str = 'w') -> int:
-        """
-        写入JSONL文件
-        
-        Args:
-            file_path: 输出文件路径
-            data: 要写入的数据列表
-            mode: 写入模式 ('w' 覆盖, 'a' 追加)
-            
-        Returns:
-            写入的记录数
-        """
-        # 确保目录存在
-        Path(file_path).parent.mkdir(parents=True, exist_ok=True)
-        
-        count = 0
-        with open(file_path, mode, encoding='utf-8') as f:
-            for item in data:
-                json_line = json.dumps(item, ensure_ascii=False)
-                f.write(json_line + '\n')
-                count += 1
-        
-        return count
-    
-    @staticmethod
-    def append_jsonl(file_path: str, data: List[Dict[str, Any]]) -> int:
-        """
-        追加写入JSONL文件
-        
-        Args:
-            file_path: 输出文件路径
-            data: 要追加的数据列表
-            
-        Returns:
-            写入的记录数
-        """
-        return OutputWriter.write_jsonl(file_path, data, mode='a')
-    
-    @staticmethod
-    def merge_jsonl_files(input_files: List[str], output_file: str) -> int:
-        """
-        合并多个JSONL文件
-        
-        Args:
-            input_files: 输入文件列表
-            output_file: 输出文件路径
-            
-        Returns:
-            合并的总记录数
-        """
-        total_records = 0
-        
-        # 确保目录存在
-        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
-        
-        with open(output_file, 'w', encoding='utf-8') as out_f:
-            for input_file in input_files:
-                if Path(input_file).exists():
-                    with open(input_file, 'r', encoding='utf-8') as in_f:
-                        for line in in_f:
-                            line = line.strip()
-                            if line:
-                                out_f.write(line + '\n')
-                                total_records += 1
-        
-        return total_records
+# 注意：OutputWriter 类已删除，数据现在直接保存到数据库
