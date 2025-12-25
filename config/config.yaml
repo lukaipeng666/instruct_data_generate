@@ -1,0 +1,17 @@
+# 服务配置文件
+
+# Web 服务配置
+web_service:
+  host: "0.0.0.0"
+  port: 5000
+
+# Redis 服务配置（用于模型调用限流）
+redis_service:
+  host: "localhost"
+  port: 6379
+  db: 0
+  password: null
+  # 等待并发槽位的最大时间（秒）
+  max_wait_time: 300
+  # 默认最大并发数（当模型未配置时使用）
+  default_max_concurrency: 16
