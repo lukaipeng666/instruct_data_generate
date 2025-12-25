@@ -1,41 +1,11 @@
-import time
-import json
-import openai
+import sys
+import os
 import requests
-import yaml
-from pathlib import Path
-from typing import List, Dict, Optional
-from requests.exceptions import HTTPError, Timeout, ConnectTimeout
+from typing import List, Dict
 
-
-def get_backend_config() -> Dict:
-    """读取后端配置"""
-    # 尝试多个可能的配置文件位置
-    possible_paths = [
-        Path(__file__).parent.parent / "config" / "config.yaml",
-        Path.cwd() / "config" / "config.yaml",
-        # 兼容旧路径
-        Path(__file__).parent.parent / "web-ui" / "config.yaml",
-        Path.cwd() / "web-ui" / "config.yaml",
-    ]
-    
-    for config_path in possible_paths:
-        if config_path.exists():
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f)
-            if config:  # 确保配置不为空
-                return config
-    
-    # 默认配置
-    return {
-        'web_service': {
-            'host': 'localhost',
-            'port': 5000  # 默认后端服务端口
-        },
-        'redis_service': {
-            'max_wait_time': 300
-        }
-    }
+# 添加项目根目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from config import get_web_config, get_redis_config
 
 
 def call_model_via_proxy(
@@ -52,10 +22,12 @@ def call_model_via_proxy(
     """
     通过后端代理调用模型API（带流量控制）
     """
-    config = get_backend_config()
-    web_config = config.get('web_service', {})
-    backend_host = web_config.get('host', 'localhost')
-    backend_port = web_config.get('port', 16385)
+    # 从统一配置模块读取后端配置
+    web_config = get_web_config()
+    redis_config = get_redis_config()
+    
+    backend_host = web_config['host']
+    backend_port = web_config['port']
     
     # 如果host是0.0.0.0，使用localhost
     if backend_host == '0.0.0.0':
@@ -76,8 +48,7 @@ def call_model_via_proxy(
     }
     
     # 计算请求超时时间：max_wait_time + 实际调用timeout + 缓冲
-    redis_config = config.get('redis_service', {})
-    max_wait_time = redis_config.get('max_wait_time', 300)
+    max_wait_time = redis_config['max_wait_time']
     request_timeout = max_wait_time + timeout + 60  # 添加60秒缓冲
     
     try:

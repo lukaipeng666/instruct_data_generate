@@ -5,7 +5,40 @@ web_service:
   host: "0.0.0.0"
   port: 5000
 
-# Redis 服务配置（用于模型调用限流）
+# 前端配置
+frontend:
+  url: "http://localhost:3000"
+
+# CORS 配置（跨域访问）
+cors:
+  # 允许的跨域源列表
+  origins:
+    - "http://localhost:3000"
+  allow_credentials: true
+  allow_methods:
+    - "*"
+  allow_headers:
+    - "*"
+
+# JWT 认证配置
+jwt:
+  # 密钥（生产环境请修改为随机字符串）
+  # 留空则自动生成随机密钥（每次重启会变化）
+  secret_key: ""
+  # 加密算法
+  algorithm: "HS256"
+  # Token 过期时间（分钟），默认30天
+  expire_minutes: 43200
+
+# 管理员配置
+admin:
+  # 默认管理员用户名
+  username: "admin"
+  # 默认管理员密码（留空则自动生成随机密码）
+  # 生产环境请修改为强密码
+  password: "suanfazu2025"
+
+# Redis 服务配置（用于模型调用限流和任务进度）
 redis_service:
   host: "localhost"
   port: 6379
@@ -15,3 +48,20 @@ redis_service:
   max_wait_time: 300
   # 默认最大并发数（当模型未配置时使用）
   default_max_concurrency: 16
+
+# 默认模型服务配置
+model_services:
+  # 默认 API 服务地址列表
+  default_services:
+    - "http://localhost:6466/v1"
+    - "http://localhost:6467/v1"
+    - "http://localhost:6468/v1"
+    - "http://localhost:6469/v1"
+    - "http://localhost:6470/v1"
+    - "http://localhost:6471/v1"
+    - "http://localhost:6472/v1"
+    - "http://localhost:6473/v1"
+  # 默认模型路径
+  default_model: "/data/models/Qwen3-32B"
+  # 默认 API Key
+  default_api_key: ""

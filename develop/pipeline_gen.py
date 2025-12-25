@@ -6,12 +6,17 @@
 
 import json
 import os
+import sys
 import asyncio
 import time
-import yaml
 import redis
-from pathlib import Path
 from typing import List, Dict, Any, Optional
+
+# 添加项目根目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+# 导入配置模块
+from config import get_default_model
 
 # 导入新的模块
 from develop.single_gen import main_process_from_samples
@@ -19,7 +24,7 @@ from develop.file_reader import FileReader
 
 
 class PipelineDataGenerator:
-    def __init__(self, services: List[str], model: str = "/data/models/Qwen3-32B",
+    def __init__(self, services: List[str], model: str = None,
                  api_key: str = "", is_vllm: bool = True, use_proxy: bool = True,
                  top_p: float = 1.0, max_tokens: int = 8192, timeout: int = 600):
         """
@@ -36,7 +41,7 @@ class PipelineDataGenerator:
             timeout: 超时时间
         """
         self.services = services
-        self.model = model
+        self.model = model or get_default_model()
         self.service_count = len(services)
         
         # 模型调用相关参数
@@ -54,18 +59,14 @@ class PipelineDataGenerator:
         """获取 Redis 客户端（单例模式）"""
         if self._redis_client is None:
             try:
-                config = self._get_yaml_config()
-                redis_config = config.get('redis_service', {})
-                host = redis_config.get('host', 'localhost')
-                port = redis_config.get('port', 6379)
-                db = redis_config.get('db', 0)
-                password = redis_config.get('password', None)
+                from config import get_redis_config
+                redis_config = get_redis_config()
                 
                 self._redis_client = redis.Redis(
-                    host=host,
-                    port=port,
-                    db=db,
-                    password=password,
+                    host=redis_config['host'],
+                    port=redis_config['port'],
+                    db=redis_config['db'],
+                    password=redis_config['password'],
                     decode_responses=True
                 )
                 # 测试连接
@@ -74,14 +75,6 @@ class PipelineDataGenerator:
                 print(f"⚠️  Redis 连接失败: {e}，任务进度将不会记录到 Redis")
                 self._redis_client = None
         return self._redis_client
-    
-    def _get_yaml_config(self) -> dict:
-        """读取 YAML 配置文件"""
-        config_path = Path(__file__).parent.parent / "config" / "config.yaml"
-        if config_path.exists():
-            with open(config_path, 'r', encoding='utf-8') as f:
-                return yaml.safe_load(f) or {}
-        return {}
     
     def update_task_progress(self, task_id: str, progress_data: dict):
         """
@@ -294,7 +287,7 @@ class PipelineDataGenerator:
             self.update_task_progress(task_id, {
                 'task_id': task_id,
                 'status': 'running',
-                'current_round': round_num + 1,
+                'current_round': round_num,
                 'total_rounds': data_rounds,
                 'total_samples': len(samples),
                 'generated_count': total_generated_count,

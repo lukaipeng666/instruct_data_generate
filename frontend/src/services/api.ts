@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { LoginResponse, User, TaskParams, Task, InputFile, AdminUser, ModelConfig, AdminTask, DataFile, Report, GeneratedDataItem } from '../types';
+import type { LoginResponse, User, TaskParams, Task, AdminUser, ModelConfig, AdminTask, DataFile, Report, GeneratedDataItem } from '../types';
 
 interface UserReportsResponse {
   success: boolean;
@@ -65,11 +65,6 @@ export const taskService = {
     return response.data.types;
   },
   
-  getInputFiles: async (): Promise<InputFile[]> => {
-    const response = await api.get<{ success: boolean; files: InputFile[] }>('/input_files');
-    return response.data.files;
-  },
-  
   // 获取激活的模型列表（普通用户）
   getActiveModels: async (): Promise<ModelConfig[]> => {
     const response = await api.get<{ success: boolean; models: ModelConfig[] }>('/models');
@@ -93,6 +88,26 @@ export const taskService = {
   getAllTasks: async (): Promise<Task[]> => {
     const response = await api.get<{ success: boolean; tasks: Task[] }>('/tasks');
     return response.data.tasks;
+  },
+  
+  // 获取任务进度（从Redis）
+  getTaskProgress: async (taskId: string): Promise<{
+    success: boolean;
+    progress?: {
+      task_id: string;
+      status: string;
+      current_round: number;
+      total_rounds: number;
+      generated_count: number;
+      progress_percent: number;
+      completion_percent?: number;
+      source: string;
+    };
+    error?: string;
+  }> => {
+    const encodedTaskId = encodeURIComponent(taskId);
+    const response = await api.get(`/progress_unified/${encodedTaskId}`);
+    return response.data;
   },
 };
 

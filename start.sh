@@ -10,15 +10,30 @@ echo "=========================================="
 echo "启动数据生成任务管理系统"
 echo "=========================================="
 
-# 从 config.yaml 读取 Redis 配置
-get_redis_config() {
+# 从 config.yaml 读取配置
+get_all_config() {
     python3 -c "
 import yaml
 with open('config/config.yaml', 'r') as f:
     config = yaml.safe_load(f)
+
+# Redis 配置
 redis_config = config.get('redis_service', {})
 print(redis_config.get('host', 'localhost'))
 print(redis_config.get('port', 6379))
+
+# Web 服务配置
+web_config = config.get('web_service', {})
+print(web_config.get('host', '0.0.0.0'))
+print(web_config.get('port', 5000))
+
+# 前端配置
+frontend_config = config.get('frontend', {})
+frontend_url = frontend_config.get('url', 'http://localhost:3000')
+# 从 URL 提取端口
+import re
+match = re.search(r':(\d+)$', frontend_url)
+print(match.group(1) if match else '3000')
 "
 }
 
@@ -68,12 +83,18 @@ mkdir -p log
 echo ""
 echo "【Redis】检查并启动 Redis 服务..."
 
-# 读取 Redis 配置
-REDIS_CONFIG=$(get_redis_config)
-REDIS_HOST=$(echo "$REDIS_CONFIG" | sed -n '1p')
-REDIS_PORT=$(echo "$REDIS_CONFIG" | sed -n '2p')
+# 读取所有配置
+ALL_CONFIG=$(get_all_config)
+REDIS_HOST=$(echo "$ALL_CONFIG" | sed -n '1p')
+REDIS_PORT=$(echo "$ALL_CONFIG" | sed -n '2p')
+BACKEND_HOST=$(echo "$ALL_CONFIG" | sed -n '3p')
+BACKEND_PORT=$(echo "$ALL_CONFIG" | sed -n '4p')
+FRONTEND_PORT=$(echo "$ALL_CONFIG" | sed -n '5p')
 
-echo "Redis 配置: $REDIS_HOST:$REDIS_PORT"
+echo "配置信息:"
+echo "  - Redis: $REDIS_HOST:$REDIS_PORT"
+echo "  - 后端: $BACKEND_HOST:$BACKEND_PORT"
+echo "  - 前端端口: $FRONTEND_PORT"
 
 # 检查 Redis 是否已在运行
 if command -v redis-cli &> /dev/null; then
@@ -104,7 +125,7 @@ fi
 
 # 启动后端服务
 echo ""
-echo "【后端】启动API服务器 (5000端口)..."
+echo "【后端】启动API服务器 (${BACKEND_PORT}端口)..."
 if [ -f log/web_app.pid ]; then
     PID=$(cat log/web_app.pid)
     if ps -p $PID > /dev/null 2>&1; then
@@ -113,7 +134,7 @@ if [ -f log/web_app.pid ]; then
         rm log/web_app.pid
         # 启动后端
         if python3 -c "import uvicorn" 2>/dev/null; then
-            nohup python3 -m uvicorn app.app:app --host 0.0.0.0 --port 5000 > log/web_app.log 2>&1 &
+            nohup python3 -m uvicorn app.app:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" > log/web_app.log 2>&1 &
         else
             nohup python3 ./app/app.py > log/web_app.log 2>&1 &
         fi
@@ -124,7 +145,7 @@ if [ -f log/web_app.pid ]; then
     fi
 else
     if python3 -c "import uvicorn" 2>/dev/null; then
-        nohup python3 -m uvicorn app.app:app --host 0.0.0.0 --port 5000 > log/web_app.log 2>&1 &
+        nohup python3 -m uvicorn app.app:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" > log/web_app.log 2>&1 &
     else
         nohup python3 ./app/app.py > log/web_app.log 2>&1 &
     fi
@@ -136,7 +157,7 @@ fi
 
 # 启动前端服务
 echo ""
-echo "【前端】启动开发服务器 (3000端口)..."
+echo "【前端】启动开发服务器 (${FRONTEND_PORT}端口)..."
 if [ -f log/frontend.pid ]; then
     PID=$(cat log/frontend.pid)
     if ps -p $PID > /dev/null 2>&1; then
@@ -144,7 +165,7 @@ if [ -f log/frontend.pid ]; then
     else
         rm log/frontend.pid
         cd frontend
-        nohup npm run dev > ../log/frontend.log 2>&1 &
+        nohup npm run dev -- --port "$FRONTEND_PORT" > ../log/frontend.log 2>&1 &
         FRONTEND_PID=$!
         echo $FRONTEND_PID > ../log/frontend.pid
         cd ..
@@ -153,7 +174,7 @@ if [ -f log/frontend.pid ]; then
     fi
 else
     cd frontend
-    nohup npm run dev > ../log/frontend.log 2>&1 &
+    nohup npm run dev -- --port "$FRONTEND_PORT" > ../log/frontend.log 2>&1 &
     FRONTEND_PID=$!
     echo $FRONTEND_PID > ../log/frontend.pid
     cd ..
@@ -178,10 +199,10 @@ echo ""
 echo "=========================================="
 echo "系统启动成功！"
 echo "=========================================="
-echo "前端地址: http://localhost:3000"
-echo "局域网前端: http://$LOCAL_IP:3000"
-echo "后端API: http://localhost:5000"
-echo "API文档: http://localhost:5000/docs"
+echo "前端地址: http://localhost:${FRONTEND_PORT}"
+echo "局域网前端: http://$LOCAL_IP:${FRONTEND_PORT}"
+echo "后端API: http://localhost:${BACKEND_PORT}"
+echo "API文档: http://localhost:${BACKEND_PORT}/docs"
 echo ""
 echo "日志文件:"
 echo "  - 后端: log/web_app.log"
@@ -192,5 +213,5 @@ echo "提示:"
 echo "  - 查看后端日志: tail -f log/web_app.log"
 echo "  - 查看前端日志: tail -f log/frontend.log"
 echo "  - 停止服务: ./stop.sh"
+echo "  - 配置文件: config/config.yaml"
 echo "=========================================="
-

@@ -1,6 +1,18 @@
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, useRef, FormEvent } from 'react';
 import { taskService, dataService } from '../services/api';
 import type { TaskParams, DataFile, ModelConfig } from '../types';
+
+// 任务进度数据类型
+interface TaskProgressData {
+  task_id: string;
+  status: string;
+  current_round: number;
+  total_rounds: number;
+  generated_count: number;
+  progress_percent: number;
+  completion_percent?: number;
+  source: string;
+}
 
 export default function TaskManagement() {
   const [taskTypes, setTaskTypes] = useState<string[]>([]);
@@ -12,6 +24,8 @@ export default function TaskManagement() {
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [progress, setProgress] = useState<string[]>([]);
   const [taskStatus, setTaskStatus] = useState<'idle' | 'running' | 'finished' | 'error'>('idle');
+  const [taskProgress, setTaskProgress] = useState<TaskProgressData | null>(null);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const [formData, setFormData] = useState<TaskParams>({
     input_file: '',
@@ -31,6 +45,13 @@ export default function TaskManagement() {
   useEffect(() => {
     loadData();
     checkActiveTask();
+    
+    // 清理进度轮询
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    };
   }, []);
 
   const loadData = async () => {
@@ -64,9 +85,52 @@ export default function TaskManagement() {
         setCurrentTaskId(result.task_id);
         setTaskStatus('running');
         connectProgress(result.task_id);
+        startProgressPolling(result.task_id);
       }
     } catch (err) {
       console.error('检查活动任务失败:', err);
+    }
+  };
+  
+  // 开始轮询任务进度
+  const startProgressPolling = (taskId: string) => {
+    // 清除之前的轮询
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+    }
+    
+    // 立即获取一次
+    fetchTaskProgress(taskId);
+    
+    // 每2秒轮询一次
+    progressIntervalRef.current = setInterval(() => {
+      fetchTaskProgress(taskId);
+    }, 2000);
+  };
+  
+  // 停止轮询任务进度
+  const stopProgressPolling = () => {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+  };
+  
+  // 获取任务进度
+  const fetchTaskProgress = async (taskId: string) => {
+    try {
+      const result = await taskService.getTaskProgress(taskId);
+      if (result.success && result.progress) {
+        setTaskProgress(result.progress);
+        
+        // 如果任务完成，停止轮询
+        if (result.progress.status === 'completed' || result.progress.status === 'failed') {
+          stopProgressPolling();
+        }
+      }
+    } catch (err) {
+      // 静默失败，不影响用户体验
+      console.error('获取任务进度失败:', err);
     }
   };
 
@@ -152,8 +216,10 @@ export default function TaskManagement() {
       setCurrentTaskId(result.task_id);
       setTaskStatus('running');
       setProgress([]);
+      setTaskProgress(null);
       setSuccess('任务已启动');
       connectProgress(result.task_id);
+      startProgressPolling(result.task_id);
     } catch (err: any) {
       setError(err.response?.data?.error || '启动任务失败');
     } finally {
@@ -169,6 +235,8 @@ export default function TaskManagement() {
       await taskService.stopTask(currentTaskId);
       setTaskStatus('idle');
       setCurrentTaskId(null);
+      setTaskProgress(null);
+      stopProgressPolling();
       setSuccess('任务已停止');
     } catch (err: any) {
       setError(err.response?.data?.error || '停止任务失败');
@@ -382,6 +450,73 @@ export default function TaskManagement() {
             </span>
           )}
         </div>
+        
+        {/* 进度条 */}
+        {taskStatus === 'running' && taskProgress && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-gray-700">
+                {taskProgress.status === 'running' ? (
+                  <>轮次 {taskProgress.current_round}/{taskProgress.total_rounds}</>
+                ) : taskProgress.status === 'completed' ? (
+                  '已完成'
+                ) : (
+                  '处理中...'
+                )}
+              </span>
+              <span className="text-sm font-medium text-gray-700">
+                {taskProgress.progress_percent !== null && taskProgress.progress_percent !== undefined 
+                  ? `${taskProgress.progress_percent.toFixed(1)}%` 
+                  : '计算中...'}
+              </span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500 ease-out bg-gradient-to-r from-blue-500 to-indigo-600"
+                style={{ 
+                  width: `${taskProgress.progress_percent ?? 0}%`,
+                  minWidth: taskProgress.progress_percent > 0 ? '2%' : '0%'
+                }}
+              />
+            </div>
+            <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
+              <span>已生成 {taskProgress.generated_count} 条数据</span>
+              {taskProgress.source === 'redis' && (
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                  实时更新
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+        
+        {/* 任务完成后的进度条显示 */}
+        {(taskStatus === 'finished' || taskStatus === 'error') && taskProgress && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-gray-700">
+                {taskStatus === 'finished' ? '任务已完成' : '任务失败'}
+              </span>
+              <span className="text-sm font-medium text-gray-700">
+                {taskStatus === 'finished' ? '100%' : `${taskProgress.progress_percent?.toFixed(1) ?? 0}%`}
+              </span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ease-out ${
+                  taskStatus === 'finished' 
+                    ? 'bg-gradient-to-r from-green-500 to-emerald-600' 
+                    : 'bg-gradient-to-r from-red-500 to-rose-600'
+                }`}
+                style={{ width: taskStatus === 'finished' ? '100%' : `${taskProgress.progress_percent ?? 0}%` }}
+              />
+            </div>
+            <div className="mt-2 text-xs text-gray-500">
+              共生成 {taskProgress.generated_count} 条数据
+            </div>
+          </div>
+        )}
         <div className="bg-gray-900 rounded-xl p-6 font-mono text-sm text-gray-300 max-h-96 overflow-y-auto">
           {progress.length === 0 ? (
             <div className="text-center text-gray-500 py-12">

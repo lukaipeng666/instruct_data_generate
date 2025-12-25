@@ -10,10 +10,8 @@ import sys
 import json
 import time
 import logging
-from pathlib import Path
 from typing import List, Dict, Optional
 
-import yaml
 import redis
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
@@ -53,6 +51,9 @@ class ModelCallResponse(BaseModel):
     error: Optional[str] = None
 
 
+# 导入统一配置模块
+from config import get_redis_config
+
 # ========== Redis 配置 ==========
 
 _redis_client = None
@@ -61,30 +62,16 @@ def get_redis_client():
     """获取 Redis 客户端（单例模式）"""
     global _redis_client
     if _redis_client is None:
-        config = _get_yaml_config()
-        redis_config = config.get('redis_service', {})
-        host = redis_config.get('host', 'localhost')
-        port = redis_config.get('port', 6379)
-        db = redis_config.get('db', 0)
-        password = redis_config.get('password', None)
+        redis_config = get_redis_config()
         
         _redis_client = redis.Redis(
-            host=host,
-            port=port,
-            db=db,
-            password=password,
+            host=redis_config['host'],
+            port=redis_config['port'],
+            db=redis_config['db'],
+            password=redis_config['password'],
             decode_responses=True
         )
     return _redis_client
-
-
-def _get_yaml_config() -> dict:
-    """读取 YAML 配置文件"""
-    config_path = Path(__file__).parent.parent.parent / "config" / "config.yaml"
-    if config_path.exists():
-        with open(config_path, 'r', encoding='utf-8') as f:
-            return yaml.safe_load(f) or {}
-    return {}
 
 
 def get_model_max_concurrency(model_name: str) -> int:
@@ -105,8 +92,8 @@ def get_model_max_concurrency(model_name: str) -> int:
             return model.max_concurrent
         
         # 默认并发数
-        config = _get_yaml_config()
-        return config.get('redis_service', {}).get('default_max_concurrency', 16)
+        redis_config = get_redis_config()
+        return redis_config['default_max_concurrency']
     finally:
         db.close()
 
@@ -137,13 +124,9 @@ def _model_call_sync(request: ModelCallRequest) -> ModelCallResponse:
     """
     同步执行模型调用（在线程池中运行）
     """
-    # 读取配置
-    config_path = Path(__file__).parent.parent.parent / "config" / "config.yaml"
-    with open(config_path, 'r', encoding='utf-8') as f:
-        yaml_config = yaml.safe_load(f)
-    
-    redis_config = yaml_config.get('redis_service', {})
-    max_wait_time = redis_config.get('max_wait_time', 300)  # 最大等待300秒
+    # 从统一配置模块读取
+    redis_config = get_redis_config()
+    max_wait_time = redis_config['max_wait_time']
     
     model_name = request.model
     redis_key = f"model_concurrency:{model_name}"
