@@ -43,12 +43,34 @@ def authenticate_user(db: Session, username: str, password: str) -> User:
     return user
 
 
+def is_bcrypt_hash(password: str) -> bool:
+    """判断字符串是否是 bcrypt 哈希值"""
+    # bcrypt 哈希值通常以 $2a$, $2b$, $2y$ 开头，长度为 60
+    return (password.startswith('$2a$') or 
+            password.startswith('$2b$') or 
+            password.startswith('$2y$')) and len(password) == 60
+
+
 def create_user(db: Session, username: str, password: str, is_admin: bool = False) -> User:
     """创建新用户"""
     hashed_password = get_password_hash(password)
     user = User(
         username=username,
         password_hash=hashed_password,
+        is_active=True,
+        is_admin=is_admin
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def create_user_with_hash(db: Session, username: str, password_hash: str, is_admin: bool = False) -> User:
+    """使用已有的密码哈希值创建新用户"""
+    user = User(
+        username=username,
+        password_hash=password_hash,
         is_active=True,
         is_admin=is_admin
     )
@@ -77,14 +99,24 @@ def init_default_admin():
         # 检查是否已存在管理员用户
         admin_user = get_user_by_username(db, admin_username)
         if not admin_user:
+            # 判断配置中的密码是哈希值还是明文
+            is_password_hash = is_bcrypt_hash(admin_password)
+            
             if admin_config['generated']:
                 print(f"⚠️  警告: config.yaml 中未设置 admin.password")
-                print(f"📝 生成的随机管理员密码: {admin_password}")
+                if not is_password_hash:
+                    print(f"📝 生成的随机管理员密码: {admin_password}")
                 print(f"🔐 请立即记录此密码，或在 config.yaml 中设置 admin.password")
             
-            # 创建默认管理员
-            create_user(db, admin_username, admin_password, is_admin=True)
-            print(f"✅ 默认管理员账号已创建: {admin_username}")
+            # 如果配置中的是哈希值，直接使用；如果是明文，则先哈希
+            if is_password_hash:
+                # 配置中已经是哈希值，直接使用
+                create_user_with_hash(db, admin_username, admin_password, is_admin=True)
+                print(f"✅ 默认管理员账号已创建: {admin_username} (使用配置中的密码哈希值)")
+            else:
+                # 配置中是明文，需要先哈希
+                create_user(db, admin_username, admin_password, is_admin=True)
+                print(f"✅ 默认管理员账号已创建: {admin_username}")
         else:
             # 确保admin用户是管理员
             if not admin_user.is_admin:
