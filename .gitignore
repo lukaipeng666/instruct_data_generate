@@ -1,9 +1,28 @@
-log/
-*.log
-*.pid
-input_file/
-output_file/
+# Virtual environment
+venv/
+.venv/
+
+# Node modules
+node_modules/
+frontend/node_modules/
+
+# Python cache
 __pycache__/
 *.pyc
-.DS_Store
+*.pyo
+*.pyd
+.Python
 
+# Logs
+log/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

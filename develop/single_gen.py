@@ -9,12 +9,10 @@ import traceback
 import os
 import argparse
 import asyncio
-import aiohttp
 import time
 import re
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
-import logging
 from pathlib import Path
 import sys
 import random
@@ -25,18 +23,8 @@ from config.tools import (
     get_prompt_builder,
     get_format_evaluator
 )
-
-# 配置日志
-os.makedirs('log', exist_ok=True)
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('log/data_generation_.log', mode='w'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+# 导入模型调用函数
+from call_model.model_call import call_model_api
 
 
 class DataGenerator:
@@ -50,7 +38,13 @@ class DataGenerator:
                  variants_per_sample: int = 3,
                  sample_retry_times: int = 3,
                  special_prompt: str = "",
-                 directions: list = ["信用卡年费"]):
+                 directions: list = ["信用卡年费"],
+                 api_key: str = "",
+                 is_vllm: bool = True,
+                 use_proxy: bool = False,
+                 top_p: float = 1.0,
+                 max_tokens: int = 8192,
+                 timeout: int = 600):
         self.api_base = api_base
         self.model = model
         self.max_concurrent = max_concurrent
@@ -59,7 +53,15 @@ class DataGenerator:
         self.min_score = min_score  # 最低分数要求
         self.task_type = task_type
         self.variants_per_sample = variants_per_sample
-        self.session = None
+        
+        # 模型调用相关参数
+        self.api_key = api_key
+        self.is_vllm = is_vllm
+        self.use_proxy = use_proxy
+        self.top_p = top_p
+        self.max_tokens = max_tokens
+        self.timeout = timeout
+        
         self.stats = {
             'samples_read': 0,
             'data_generated': 0,
@@ -79,82 +81,58 @@ class DataGenerator:
         self.directions = directions
     
     async def init_session(self):
-        """初始化HTTP会话"""
-        timeout = aiohttp.ClientTimeout(total=600)  
-        self.session = aiohttp.ClientSession(timeout=timeout)
+        """初始化（保留兼容性）"""
+        pass
     
     async def close_session(self):
-        """关闭HTTP会话"""
-        if self.session:
-            await self.session.close()
+        """关闭（保留兼容性）"""
+        pass
     
     async def call_api(self, prompt: str, temperature: float = 0.6) -> Optional[str]:
-        """调用本地API"""
-        payload = {
-            "model": self.model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            "temperature": temperature,
-            "max_tokens": 8096,
-            "stream": True
-        }
+        """调用模型API（使用 call_model 模块）"""
+        messages = [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
         
-        full_response = ""
-        for attempt in range(self.retry_times):
-            try:
-                async with self.session.post(
-                    f"{self.api_base}/chat/completions",
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                ) as response:
-
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.warning(f"API调用失败 (状态码: {response.status}): {error_text}")
-                        if attempt < self.retry_times - 1:
-                            await asyncio.sleep(2 ** attempt)
-                        continue
-
-                    async for line in response.content:
-                        line = line.strip().decode('utf-8')
-                        if not line:
-                            continue
-                        if line.startswith("data: "):
-                            data_str = line[6:]
-                            if data_str == "[DONE]":
-                                return full_response.strip()
-                            try:
-                                data = json.loads(data_str)
-                                delta = data["choices"][0]["delta"].get("content", "")
-                                if delta:
-                                    full_response += delta
-                                    # print(delta, end="", flush=True)
-                            except (KeyError, json.JSONDecodeError) as e:
-                                logger.debug(f"解析流数据失败: {data_str}")
-                                continue
-                    return full_response.strip()
-
-            except asyncio.TimeoutError:
-                logger.warning(f"API调用超时 (尝试 {attempt + 1}/{self.retry_times})")
-            except aiohttp.ClientConnectorError as e:
-                logger.warning(f"连接错误 (尝试 {attempt + 1}/{self.retry_times}): {e!r}")
-            except aiohttp.ServerDisconnectedError:
-                logger.warning(f"服务器断开连接 (尝试 {attempt + 1}/{self.retry_times})")
-            except aiohttp.ClientResponseError as e:
-                logger.warning(f"响应错误 (状态码: {e.status}): {e.message}")
-            except Exception as e:
-                logger.warning(f"未预期异常 {type(e).__name__} (尝试 {attempt + 1}/{self.retry_times}): {str(e) or repr(e)}")
-                logger.debug(f"详细堆栈: {traceback.format_exc()}")
-
-            if attempt < self.retry_times - 1:
-                await asyncio.sleep(2 ** attempt)
-        
-        self.stats['api_errors'] += 1
-        return None
+        try:
+            # 使用 call_model_api 进行调用（在线程池中运行同步函数）
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: call_model_api(
+                    api_url=self.api_base,
+                    api_key=self.api_key,
+                    messages=messages,
+                    model=self.model,
+                    temperature=temperature,
+                    max_tokens=self.max_tokens,
+                    retry_times=self.retry_times,
+                    timeout=self.timeout,
+                    is_vllm=self.is_vllm,
+                    top_p=self.top_p,
+                    use_proxy=self.use_proxy
+                )
+            )
+            
+            # 检查是否为错误响应
+            if response and (response.startswith("模型调用失败") or 
+                            response.startswith("API Connection Error") or
+                            response.startswith("Rate Limit Error") or
+                            response.startswith("代理调用失败")):
+                print(f"API调用失败: {response}")
+                self.stats['api_errors'] += 1
+                return None
+            
+            return response.strip() if response else None
+            
+        except Exception as e:
+            print(f"API调用异常: {type(e).__name__}: {str(e)}")
+            print(f"详细堆栈: {traceback.format_exc()}")
+            self.stats['api_errors'] += 1
+            return None
     
     def parse_generated_data(self, response: str, batch_idx: int = None, thread_idx: int = None, is_main_batch: bool = False, is_main_thread: bool = False) -> List[Dict[str, Any]]:
         """解析生成的数据
@@ -178,25 +156,25 @@ class DataGenerator:
                 try:
                     data = json.loads(json_str)
                     if isinstance(data, list):
-                        logger.info("✅ 成功解析JSON数组")
-                        logger.info(f"📊 解析后的数据长度: {len(data)}")
+                        print("✅ 成功解析JSON数组")
+                        print(f"📊 解析后的数据长度: {len(data)}")
                         if len(data) > 0:
-                            logger.info(f"📊 第一个元素的结构: {json.dumps(data[0], ensure_ascii=False, indent=2)[:300]}")
+                            print(f"📊 第一个元素的结构: {json.dumps(data[0], ensure_ascii=False, indent=2)[:300]}")
                         return data
                     elif isinstance(data, dict):
-                        logger.info("✅ 成功解析JSON对象（转换为列表）")
+                        print("✅ 成功解析JSON对象（转换为列表）")
                         return [data]
                 except json.JSONDecodeError as e:
-                    logger.warning(f"JSON解析失败: {e}")
+                    print(f"JSON解析失败: {e}")
             
             # 方法2: 尝试直接解析整个响应
             try:
                 data = json.loads(response.strip())
                 if isinstance(data, list):
-                    logger.info("✅ 成功解析整个响应为JSON数组")
+                    print("✅ 成功解析整个响应为JSON数组")
                     return data
                 elif isinstance(data, dict):
-                    logger.info("✅ 成功解析整个响应为JSON对象（转换为列表）")
+                    print("✅ 成功解析整个响应为JSON对象（转换为列表）")
                     return [data]
             except json.JSONDecodeError:
                 pass
@@ -210,45 +188,45 @@ class DataGenerator:
                 try:
                     data = json.loads(array_str)
                     if isinstance(data, list):
-                        logger.info("✅ 成功从数组模式提取并解析JSON")
+                        print("✅ 成功从数组模式提取并解析JSON")
                         return data
                 except json.JSONDecodeError as e:
-                    logger.warning(f"数组模式JSON解析失败: {e}")
+                    print(f"数组模式JSON解析失败: {e}")
             
             # 所有方法都失败
-            logger.warning("未找到有效的JSON内容")
+            print("未找到有效的JSON内容")
             # 如果是主批次的主线程，打印详细日志
             if is_main_batch and is_main_thread:
-                logger.error("=" * 80)
-                logger.error("【主批次主线程】模型输出解析失败 - 详细日志")
-                logger.error(f"批次索引: {batch_idx}, 线程索引: {thread_idx}")
-                logger.error("所有解析方法均失败")
-                logger.error("=" * 80)
-                logger.error("完整模型输出:")
-                logger.error(response)
-                logger.error("=" * 80)
+                print("=" * 80)
+                print("【主批次主线程】模型输出解析失败 - 详细日志")
+                print(f"批次索引: {batch_idx}, 线程索引: {thread_idx}")
+                print("所有解析方法均失败")
+                print("=" * 80)
+                print("完整模型输出:")
+                print(response)
+                print("=" * 80)
                 # 尝试分析问题
                 if "```json" in response:
-                    logger.error("检测到```json标记，但内容无法解析")
+                    print("检测到```json标记，但内容无法解析")
                 elif "[" in response and "]" in response:
-                    logger.error("检测到数组标记[]，但内容无法解析")
+                    print("检测到数组标记[]，但内容无法解析")
                 else:
-                    logger.error("未检测到JSON格式标记")
+                    print("未检测到JSON格式标记")
             return []
             
         except Exception as e:
-            logger.warning(f"解析过程中出现异常: {e}")
+            print(f"解析过程中出现异常: {e}")
             # 如果是主批次的主线程，打印详细日志
             if is_main_batch and is_main_thread:
-                logger.error("=" * 80)
-                logger.error("【主批次主线程】模型输出解析异常 - 详细日志")
-                logger.error(f"批次索引: {batch_idx}, 线程索引: {thread_idx}")
-                logger.error(f"异常类型: {type(e).__name__}")
-                logger.error(f"异常信息: {e}")
-                logger.error("=" * 80)
-                logger.error("完整模型输出:")
-                logger.error(response)
-                logger.error("=" * 80)
+                print("=" * 80)
+                print("【主批次主线程】模型输出解析异常 - 详细日志")
+                print(f"批次索引: {batch_idx}, 线程索引: {thread_idx}")
+                print(f"异常类型: {type(e).__name__}")
+                print(f"异常信息: {e}")
+                print("=" * 80)
+                print("完整模型输出:")
+                print(response)
+                print("=" * 80)
             return []
 
     def parse_evaluation_score(self, response: str) -> Optional[int]:
@@ -319,28 +297,28 @@ class DataGenerator:
             # 调用API生成数据
             response = await self.call_api(prompt, temperature=0.3)
             if response is None:
-                logger.error("生成数据API调用失败")
+                print("生成数据API调用失败")
                 return []
             
             # 如果是主批次的主线程，打印模型输出
             if is_main_batch and is_main_thread:
-                logger.info("=" * 80)
-                logger.info("【主批次主线程】模型原始输出")
-                logger.info(f"批次索引: {batch_idx}, 线程索引: {thread_idx}")
-                logger.info("=" * 80)
-                logger.info(response)
-                logger.info("=" * 80)
+                print("=" * 80)
+                print("【主批次主线程】模型原始输出")
+                print(f"批次索引: {batch_idx}, 线程索引: {thread_idx}")
+                print("=" * 80)
+                print(response)
+                print("=" * 80)
             
             # 解析生成的数据
             generated_list = self.parse_generated_data(response, batch_idx, thread_idx, is_main_batch, is_main_thread)
-            logger.info(f"📊 解析结果：generated_list长度={len(generated_list)}")
+            print(f"📊 解析结果：generated_list长度={len(generated_list)}")
             if generated_list:
-                logger.info(f"📊 第一个generated_data的结构: {json.dumps(generated_list[0] if len(generated_list) > 0 else {}, ensure_ascii=False, indent=2)[:500]}")
+                print(f"📊 第一个generated_data的结构: {json.dumps(generated_list[0] if len(generated_list) > 0 else {}, ensure_ascii=False, indent=2)[:500]}")
             self.stats['data_generated'] += len(generated_list)
             return generated_list
             
         except Exception as e:
-            logger.error(f"生成数据时出错: {str(e)}")
+            print(f"生成数据时出错: {str(e)}")
             return []
     
     async def evaluate_generated_data(self, sample_data: Dict[str, Any], generated_data: Dict[str, Any]) -> Tuple[int, int]:
@@ -353,13 +331,13 @@ class DataGenerator:
             
             # 添加调试日志：检查turns的类型和内容
             if not isinstance(turns, list):
-                logger.error(f"⚠️ 警告：turns不是列表类型！类型: {type(turns)}, 值: {turns}")
-                logger.error(f"generated_data结构: {json.dumps(generated_data, ensure_ascii=False, indent=2)}")
+                print(f"⚠️ 警告：turns不是列表类型！类型: {type(turns)}, 值: {turns}")
+                print(f"generated_data结构: {json.dumps(generated_data, ensure_ascii=False, indent=2)}")
                 return 0, 0
             
             for turn in turns:
                 if not isinstance(turn, dict):
-                    logger.error(f"⚠️ 警告：turn不是字典类型！类型: {type(turn)}, 值: {turn}")
+                    print(f"⚠️ 警告：turn不是字典类型！类型: {type(turn)}, 值: {turn}")
                     continue
                 if turn.get('role') == 'Assistant':
                     assistant_text = turn.get('text', '')
@@ -369,27 +347,27 @@ class DataGenerator:
             Human = 0
             for turn_idx, turn in enumerate(turns):
                 if not isinstance(turn, dict):
-                    logger.warning(f"⚠️ turn[{turn_idx}]不是字典: {type(turn)}, 值: {turn}")
+                    print(f"⚠️ turn[{turn_idx}]不是字典: {type(turn)}, 值: {turn}")
                     continue
                 role = turn.get('role', '')
                 # 处理role字段：去除首尾空格，统一大小写
                 if isinstance(role, str):
                     role = role.strip()
                 # 添加调试：打印每个turn的role
-                logger.info(f"🔍 调试：turn[{turn_idx}]的role='{role}' (原始值: '{turn.get('role', '')}', 类型: {type(role)})")
+                print(f"🔍 调试：turn[{turn_idx}]的role='{role}' (原始值: '{turn.get('role', '')}', 类型: {type(role)})")
                 if role == 'Assistant':
                     Assistant += 1
-                    logger.info(f"  ✅ 找到Assistant，当前计数: {Assistant}")
+                    print(f"  ✅ 找到Assistant，当前计数: {Assistant}")
                 elif role == 'Human':
                     Human += 1
-                    logger.info(f"  ✅ 找到Human，当前计数: {Human}")
+                    print(f"  ✅ 找到Human，当前计数: {Human}")
                     human_content = turn.get('text')
                     if human_content:
                         human_content = human_content.strip()
                         human_content = human_content.split("\n")
                 else:
-                    logger.warning(f"⚠️ turn[{turn_idx}]未知的role值: '{role}' (原始值: '{turn.get('role', '')}', 类型: {type(role)})")
-                    logger.warning(f"  turn完整内容: {json.dumps(turn, ensure_ascii=False)}")
+                    print(f"⚠️ turn[{turn_idx}]未知的role值: '{role}' (原始值: '{turn.get('role', '')}', 类型: {type(role)})")
+                    print(f"  turn完整内容: {json.dumps(turn, ensure_ascii=False)}")
                     # if human_content[-1][:6] != "客户当前输入":
                     #     print("'客户当前输入'不在内容范围内")
                     #     return 0, 0
@@ -407,7 +385,7 @@ class DataGenerator:
                         eval_response_list.append(eval_response)
                         model_score_ = self.parse_evaluation_score(eval_response)
                         if (model_score_ and model_score_ < self.min_score) or not model_score_:
-                            logger.warning(f"模型评估存在低于{self.min_score}分或缺失打分的情况，默认评分0分")
+                            print(f"模型评估存在低于{self.min_score}分或缺失打分的情况，默认评分0分")
                             return 0, 0
                     if all(eval_response for eval_response in eval_response_list):
                         model_score_list = [self.parse_evaluation_score(eval_response) for eval_response in eval_response_list]
@@ -415,22 +393,22 @@ class DataGenerator:
                             model_score = sum(model_score_list) / len(model_score_list)
                         else:
                             model_score = 0
-                            logger.warning(f"模型评估存在低于{self.min_score}分或缺失打分的情况，默认评分0分")
+                            print(f"模型评估存在低于{self.min_score}分或缺失打分的情况，默认评分0分")
                         if model_score is None:
                             model_score = 0
-                            logger.warning("模型评估解析失败，默认评分0分")
+                            print("模型评估解析失败，默认评分0分")
                     else:
-                        logger.warning("模型评估API调用失败，默认评分0分")
+                        print("模型评估API调用失败，默认评分0分")
                 else:
-                    logger.warning("输出不符合规则，模型默认评分0分")
+                    print("输出不符合规则，模型默认评分0分")
             else:
-                logger.warning("生成的对话不全")
-                logger.warning(f"Assistant的数量为:{Assistant}, Human的数量为:{Human}")
+                print("生成的对话不全")
+                print(f"Assistant的数量为:{Assistant}, Human的数量为:{Human}")
             self.stats['data_evaluated'] += 1
             return model_score, rule_score
             
         except Exception as e:
-            logger.error(f"评估数据时出错: {str(e)}\n错误的数据是:{json.dumps(generated_data, indent=4, ensure_ascii=False)}")
+            print(f"评估数据时出错: {str(e)}\n错误的数据是:{json.dumps(generated_data, indent=4, ensure_ascii=False)}")
             return 0, 0
     
 
@@ -447,7 +425,7 @@ class DataGenerator:
                 eval_response_list.append(eval_response)
                 model_score_ = self.parse_evaluation_score(eval_response)
                 if (model_score_ and model_score_ < self.min_score) or not model_score_:
-                    logger.warning(f"模型评估存在低于{self.min_score}分或缺失打分的情况，默认评分0分")
+                    print(f"模型评估存在低于{self.min_score}分或缺失打分的情况，默认评分0分")
                     return model_score_, eval_response
             if all(eval_response for eval_response in eval_response_list):
                 model_score_list = [self.parse_evaluation_score(eval_response) for eval_response in eval_response_list]
@@ -455,17 +433,17 @@ class DataGenerator:
                     model_score = sum(model_score_list) / len(model_score_list)
                 else:
                     model_score = 0
-                    logger.warning(f"模型评估存在低于{self.min_score}分或缺失打分的情况，默认评分0分")
+                    print(f"模型评估存在低于{self.min_score}分或缺失打分的情况，默认评分0分")
                 if model_score is None:
                     model_score = 0
-                    logger.warning("模型评估解析失败，默认评分0分")
+                    print("模型评估解析失败，默认评分0分")
             else:
-                logger.warning("模型评估API调用失败，默认评分0分")
+                print("模型评估API调用失败，默认评分0分")
 
             return model_score_, eval_response
             
         except Exception as e:
-            logger.error(f"评估数据时出错: {str(e)}")
+            print(f"评估数据时出错: {str(e)}")
             return 0, "评分时出错"
     
     async def process_single_sample(self, sample_data: Dict[str, Any], batch_idx: int = None, thread_idx: int = None, is_main_batch: bool = False, is_main_thread: bool = False) -> List[Dict[str, Any]]:
@@ -485,11 +463,11 @@ class DataGenerator:
                 
                 if not generated_list:
                     if retry_count < self.sample_retry_times - 1:
-                        logger.warning(f"未能生成有效数据，准备重试 ({retry_count + 1}/{self.sample_retry_times})")
+                        print(f"未能生成有效数据，准备重试 ({retry_count + 1}/{self.sample_retry_times})")
                         self.stats['sample_retries'] += 1
                         continue
                     else:
-                        logger.warning(f"重试{self.sample_retry_times}次后仍未能生成有效数据")
+                        print(f"重试{self.sample_retry_times}次后仍未能生成有效数据")
                         return []
                 
                 # 评估每个生成的数据
@@ -498,22 +476,22 @@ class DataGenerator:
                 for idx, generated_data in enumerate(generated_list):
                     # 添加调试日志：检查generated_data的结构
                     if not isinstance(generated_data, dict):
-                        logger.error(f"⚠️ 警告：generated_data[{idx}]不是字典类型！类型: {type(generated_data)}, 值: {generated_data}")
+                        print(f"⚠️ 警告：generated_data[{idx}]不是字典类型！类型: {type(generated_data)}, 值: {generated_data}")
                         continue
                     if 'turns' not in generated_data:
-                        logger.error(f"⚠️ 警告：generated_data[{idx}]中没有'turns'字段！")
-                        logger.error(f"generated_data结构: {json.dumps(generated_data, ensure_ascii=False, indent=2)}")
+                        print(f"⚠️ 警告：generated_data[{idx}]中没有'turns'字段！")
+                        print(f"generated_data结构: {json.dumps(generated_data, ensure_ascii=False, indent=2)}")
                         continue
                     
                     # 添加详细调试日志：打印turns的内容
                     turns = generated_data.get('turns', [])
-                    logger.info(f"🔍 调试：generated_data[{idx}]的turns内容:")
-                    logger.info(f"  turns类型: {type(turns)}, 长度: {len(turns) if isinstance(turns, list) else 'N/A'}")
+                    print(f"🔍 调试：generated_data[{idx}]的turns内容:")
+                    print(f"  turns类型: {type(turns)}, 长度: {len(turns) if isinstance(turns, list) else 'N/A'}")
                     if isinstance(turns, list):
                         for turn_idx, turn in enumerate(turns):
-                            logger.info(f"  turn[{turn_idx}]: {json.dumps(turn, ensure_ascii=False)}")
+                            print(f"  turn[{turn_idx}]: {json.dumps(turn, ensure_ascii=False)}")
                     else:
-                        logger.error(f"  turns不是列表！值: {turns}")
+                        print(f"  turns不是列表！值: {turns}")
                     
                     model_score, rule_score = await self.evaluate_generated_data(sample_data, generated_data)
                     
@@ -536,13 +514,13 @@ class DataGenerator:
                         
                         qualified_data.append(complete_data)
                         self.stats['data_passed'] += 1
-                        logger.info(f"数据通过评估 - 模型评分: {model_score}, 规则评分: {rule_score} (重试次数: {retry_count})")
+                        print(f"数据通过评估 - 模型评分: {model_score}, 规则评分: {rule_score} (重试次数: {retry_count})")
                     else:
                         self.stats['data_failed'] += 1
                         if rule_score != 10:
-                            logger.info(f"数据未通过评估 - 规则评分未满分: {rule_score} (需要10分), 模型评分: {model_score}")
+                            print(f"数据未通过评估 - 规则评分未满分: {rule_score} (需要10分), 模型评分: {model_score}")
                         else:
-                            logger.info(f"数据未通过评估 - 模型评分不足: {model_score} (需要≥{self.min_score}), 规则评分: {rule_score}")
+                            print(f"数据未通过评估 - 模型评分不足: {model_score} (需要≥{self.min_score}), 规则评分: {rule_score}")
                 
                 # 如果有合格数据，直接返回
                 if qualified_data:
@@ -550,20 +528,20 @@ class DataGenerator:
                 
                 # 如果没有合格数据且还可以重试
                 if retry_count < self.sample_retry_times - 1:
-                    logger.warning(f"本轮未产生合格数据，准备重试 ({retry_count + 1}/{self.sample_retry_times})")
+                    print(f"本轮未产生合格数据，准备重试 ({retry_count + 1}/{self.sample_retry_times})")
                     self.stats['sample_retries'] += 1
                     continue
                 else:
-                    logger.warning(f"重试{self.sample_retry_times}次后仍未产生合格数据")
+                    print(f"重试{self.sample_retry_times}次后仍未产生合格数据")
                     return []
                 
             except Exception as e:
                 if retry_count < self.sample_retry_times - 1:
-                    logger.error(f"处理样本时出错: {str(e)}，准备重试 ({retry_count + 1}/{self.sample_retry_times})")
+                    print(f"处理样本时出错: {str(e)}，准备重试 ({retry_count + 1}/{self.sample_retry_times})")
                     self.stats['sample_retries'] += 1
                     continue
                 else:
-                    logger.error(f"重试{self.sample_retry_times}次后仍然出错: {str(e)}")
+                    print(f"重试{self.sample_retry_times}次后仍然出错: {str(e)}")
                     return []
         
         return []
@@ -593,96 +571,146 @@ class DataGenerator:
             if isinstance(result, list):
                 all_qualified_data.extend(result)
             elif isinstance(result, Exception):
-                logger.error(f"批处理中出现异常: {result}")
+                print(f"批处理中出现异常: {result}")
         
         return all_qualified_data
     
-    async def generate_from_file(self, input_file: str, output_file: str, batch_size: int = 5):
-        """从文件生成数据"""
-        logger.info(f"开始从文件生成数据: {input_file}")
+    async def generate_from_samples(self, samples: List[Dict[str, Any]], 
+                                     batch_size: int = 5,
+                                     task_id: str = None,
+                                     user_id: int = None) -> Dict[str, Any]:
+        """
+        从内存中的样本数据生成数据并保存到数据库
+        
+        Args:
+            samples: 样本数据列表
+            batch_size: 批处理大小
+            task_id: 任务ID（必需）
+            user_id: 用户ID（必需）
+            
+        Returns:
+            包含统计信息和生成结果的字典
+        """
+        print(f"开始处理 {len(samples)} 个样本")
+        
+        # 验证必需参数
+        if not task_id or not user_id:
+            raise ValueError("保存到数据库时必须提供 task_id 和 user_id")
+        
+        # 重置统计数据
+        self.stats['samples_read'] = len(samples)
         
         # 初始化会话
         await self.init_session()
         
         try:
-            # 读取样本文件
-            samples = []
-            with open(input_file, 'r', encoding='utf-8') as f:
-                for line_num, line in enumerate(f, 1):
-                    try:
-                        data = json.loads(line.strip())
-                        samples.append(data)
-                        self.stats['samples_read'] += 1
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"第{line_num}行JSON解析失败: {e}")
+            # 导入数据库服务
+            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from database import save_batch_generated_data
             
-            logger.info(f"共读取 {len(samples)} 个样本")
-            
-            # 创建输出文件
-            output_path = Path(output_file)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            print(f"✅ 数据库存储模式 (task_id={task_id}, user_id={user_id})")
             
             # 分批处理
             all_qualified_data = []
-            with open(output_file, 'w', encoding='utf-8') as out_f:
-                for i in range(0, len(samples), batch_size):
-                    batch = samples[i:i + batch_size]
-                    batch_idx = i // batch_size
-                    is_main_batch = (batch_idx == 0)  # 第一个批次为主批次
-                    logger.info(f"处理批次 {batch_idx + 1}/{(len(samples) + batch_size - 1)//batch_size}")
-                    
-                    # 处理当前批次
-                    batch_results = await self.process_batch(batch, batch_idx, is_main_batch)
-                    
-                    # 立即写入合格的数据
-                    for qualified_data in batch_results:
-                        json_line = json.dumps(qualified_data, ensure_ascii=False)
-                        out_f.write(json_line + '\n')
-                    
-                    all_qualified_data.extend(batch_results)
-                    
-                    # 显示进度
-                    progress = (i + len(batch)) / len(samples) * 100
-                    logger.info(f"进度: {progress:.1f}% (已生成合格数据: {len(all_qualified_data)} 条)")
+            for i in range(0, len(samples), batch_size):
+                batch = samples[i:i + batch_size]
+                batch_idx = i // batch_size
+                is_main_batch = (batch_idx == 0)  # 第一个批次为主批次
+                print(f"处理批次 {batch_idx + 1}/{(len(samples) + batch_size - 1)//batch_size}")
+                
+                # 处理当前批次
+                batch_results = await self.process_batch(batch, batch_idx, is_main_batch)
+                
+                all_qualified_data.extend(batch_results)
+                
+                # 批量保存当前批次的数据到数据库
+                if batch_results:
+                    try:
+                        saved_count = save_batch_generated_data(
+                            task_id=task_id,
+                            user_id=user_id,
+                            data_list=batch_results,
+                            generation_model=self.model.split('/')[-1],
+                            task_type=self.task_type
+                        )
+                        print(f"💾 批次 {batch_idx + 1} 成功保存 {saved_count} 条数据到数据库")
+                    except Exception as e:
+                        print(f"⚠️  保存批次 {batch_idx + 1} 数据到数据库失败: {e}")
+                        raise e  # 数据库保存失败应该抛出异常
+                
+                # 显示进度
+                progress = (i + len(batch)) / len(samples) * 100
+                print(f"进度: {progress:.1f}% (已生成合格数据: {len(all_qualified_data)} 条)")
             
-            logger.info(f"数据生成完成! 统计: {self.stats}")
-            logger.info(f"输出文件: {output_file}")
-            logger.info(f"总计生成合格数据: {len(all_qualified_data)} 条")
+            print(f"数据生成完成! 统计: {self.stats}")
+            print(f"总计生成合格数据: {len(all_qualified_data)} 条")
+            print(f"💾 所有数据已保存到数据库 (task_id={task_id})")
+            
+            # 返回结果和统计信息
+            return {
+                'status': 'Success',
+                'output_count': len(all_qualified_data),
+                'qualified_data': all_qualified_data,
+                'stats': self.stats.copy(),
+                'task_id': task_id
+            }
+        
+        except Exception as e:
+            print(f"处理样本时出错: {str(e)}")
+            return {
+                'status': 'Failed',
+                'error': str(e),
+                'output_count': 0,
+                'stats': self.stats.copy()
+            }
         
         finally:
             await self.close_session()
 
-
-def test_api_connection(api_base: str) -> bool:
-    """测试API连接"""
-    import requests
-    try:
-        response = requests.get(f"{api_base}/models", timeout=10)
-        if response.status_code == 200:
-            models = response.json()
-            logger.info(f"API连接成功，可用模型: {[m['id'] for m in models.get('data', [])]}")
-            return True
-        else:
-            logger.error(f"API连接失败，状态码: {response.status_code}")
-            return False
-    except Exception as e:
-        logger.error(f"API连接测试失败: {e}")
-        return False
-
-
-async def main_process(input_file, output_file, api_base, model, batch_size, max_concurrent, retry_times, min_score, task_type, variants_per_sample, sample_retry_times, special_prompt, directions):
+async def main_process_from_samples(samples: List[Dict[str, Any]], 
+                                     api_base: str, model: str, batch_size: int, 
+                                     max_concurrent: int, retry_times: int, min_score: int, 
+                                     task_type: str, variants_per_sample: int, 
+                                     sample_retry_times: int, special_prompt: str, 
+                                     directions: list, 
+                                     task_id: str,
+                                     user_id: int,
+                                     api_key: str = "", 
+                                     is_vllm: bool = True, use_proxy: bool = False,
+                                     top_p: float = 1.0, max_tokens: int = 8192, 
+                                     timeout: int = 600) -> Dict[str, Any]:
+    """
+    主处理函数 - 生成数据并保存到SQL数据库
     
-    try:
-        # 检查输入文件
-        if not os.path.exists(input_file):
-            logger.error(f"输入文件不存在: {input_file}")
-            return
+    Args:
+        samples: 样本数据列表
+        api_base: API服务地址
+        model: 模型名称
+        batch_size: 批处理大小
+        max_concurrent: 最大并发数
+        retry_times: 重试次数
+        min_score: 最低评分要求
+        task_type: 任务类型
+        variants_per_sample: 每个样本生成的变体数量
+        sample_retry_times: 样本处理重试次数
+        special_prompt: 特殊提示词
+        directions: 生成方向列表
+        task_id: 任务ID（必需）
+        user_id: 用户ID（必需）
+        api_key: API密钥
+        is_vllm: 是否使用vLLM格式
+        use_proxy: 是否使用代理
+        top_p: top_p参数
+        max_tokens: 最大token数
+        timeout: 超时时间
         
-        # 测试API连接
-        logger.info("测试API连接...")
-        if not test_api_connection(api_base):
-            logger.error("API连接失败，请检查服务是否正常运行")
-            return
+    Returns:
+        包含统计信息和生成结果的字典
+    """
+    try:
+        if not samples:
+            print("输入样本为空")
+            return {"status": "Failed", "error": "输入样本为空", "output_count": 0}
         
         # 创建数据生成器
         generator = DataGenerator(
@@ -695,19 +723,35 @@ async def main_process(input_file, output_file, api_base, model, batch_size, max
             variants_per_sample=variants_per_sample,
             sample_retry_times=sample_retry_times,
             special_prompt=special_prompt,
-            directions=directions
+            directions=directions,
+            api_key=api_key,
+            is_vllm=is_vllm,
+            use_proxy=use_proxy,
+            top_p=top_p,
+            max_tokens=max_tokens,
+            timeout=timeout
         )
         
-        # 开始生成数据
+        # 开始生成数据（直接从内存中的样本）
         start_time = time.time()
-        await generator.generate_from_file(input_file, output_file, batch_size)
+        result = await generator.generate_from_samples(
+            samples=samples,
+            batch_size=batch_size,
+            task_id=task_id,
+            user_id=user_id
+        )
         end_time = time.time()
         
-        logger.info(f"总耗时: {end_time - start_time:.2f} 秒")
-
-        return {"status": "Sucessed"}
+        print(f"总耗时: {end_time - start_time:.2f} 秒")
+        
+        # 返回完整结果
+        result['duration'] = end_time - start_time
+        result['input_samples'] = len(samples)
+        return result
+        
     except Exception as e:
-        return {"status": "Failed"}
+        print(f"处理过程出错: {str(e)}")
+        return {"status": "Failed", "error": str(e), "output_count": 0}
 
 def main():
     parser = argparse.ArgumentParser(description='使用本地大模型生成新的对话数据')
@@ -724,7 +768,7 @@ def main():
     parser.add_argument('--sample-retry-times', type=int, default=1, help='样本处理重试次数')
     
     args = parser.parse_args()
-    asyncio.run(main_process(args.input_file, args.output, args.api_base, args.model, args.batch_size, args.max_concurrent, args.retry_times, args.min_score, args.task_type, args.variants_per_sample, args.sample_retry_times)) 
+    print("警告: 本独立模式已废弃，请使用 main.py 入口调用") 
 
 
 if __name__ == "__main__":

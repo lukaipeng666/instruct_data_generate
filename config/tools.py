@@ -206,5 +206,12 @@ def get_prompt_builder(prompt_type: str):
 
 
 def get_format_evaluator(task_type: str):
-    """获取格式评估函数"""
-    return FORMAT_EVALUATORS.get(task_type) 
+    """获取格式评估函数
+    
+    Args:
+        task_type: 任务类型
+        
+    Returns:
+        格式评估函数，如果任务类型不存在则返回通用评估函数
+    """
+    return FORMAT_EVALUATORS.get(task_type, _evaluate_general_format) 
