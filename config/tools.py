@@ -7,8 +7,23 @@
 from typing import Dict, Any, Optional
 import json
 import random
+import threading
 from .prompt_config import *
 import re
+
+# 线程局部随机数生成器，避免多线程共享全局随机状态
+_thread_local = threading.local()
+
+
+def _get_thread_random() -> random.Random:
+    """
+    获取线程局部的随机数生成器
+    每个线程拥有独立的 Random 实例，避免多线程竞争
+    """
+    if not hasattr(_thread_local, 'rng'):
+        # 为每个线程创建独立的 Random 实例
+        _thread_local.rng = random.Random()
+    return _thread_local.rng
 
 
 def build_generation_prompt(sample_data: Dict[str, Any], num_variants: int = 1, special: str = "", directions: list = ['信用卡年费', ' 股票爆仓', ' 基金赎回']) -> str:
@@ -30,7 +45,9 @@ def build_generation_prompt(sample_data: Dict[str, Any], num_variants: int = 1, 
     
     conversation_str = json.dumps(turns, ensure_ascii=False, indent=4)
 
-    direction = random.sample(directions, num_variants)
+    # 使用线程局部随机数生成器，避免多线程竞争
+    thread_rng = _get_thread_random()
+    direction = thread_rng.sample(directions, min(num_variants, len(directions)))
 
     # 构建生成提示词
     prompt = command_prompt.format(num_variants=num_variants, meta_description=meta_description, conversation_str=conversation_str, direction=direction, special=special)
