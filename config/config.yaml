@@ -24,7 +24,7 @@ cors:
 jwt:
   # 密钥（生产环境请修改为随机字符串）
   # 留空则自动生成随机密钥（每次重启会变化）
-  secret_key: ""
+  secret_key: "HOfH8KkJ7Ei45XhTEJ48xhDIfgDwCWoKEuGK4XfxV_RfSTsd0VctL52oYgX3nw3MNQqxM44KmKwu9z1EXp2jAA"
   # 加密算法
   algorithm: "HS256"
   # Token 过期时间（分钟），默认30天
