@@ -366,8 +366,8 @@ def convert_jsonl_to_csv_content(jsonl_content: bytes) -> bytes:
     num_turns = max_conv_length // 2
     headers: List[str] = ["meta"]
     for i in range(num_turns):
-        headers.append(f"Human_{i+1}")
-        headers.append(f"Assistant_{i+1}")
+        headers.append(f"Human")
+        headers.append(f"Assistant")
     
     # 补齐所有行的长度
     for row in all_rows:
@@ -468,6 +468,292 @@ async def get_data_file_content(file_id: int, current_user=Depends(get_current_u
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"获取文件内容失败: {str(e)}"
+        )
+
+
+@router.get('/data_files/{file_id}/content/editable')
+async def get_data_file_content_editable(file_id: int, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+    """获取数据文件内容（带索引，用于编辑）"""
+    try:
+        # 获取文件信息
+        data_file = get_data_file_by_id(db, file_id, current_user.id)
+        if not data_file:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="文件不存在或无权访问"
+            )
+        
+        # 解析JSONL内容
+        try:
+            content_text = data_file.file_content.decode('utf-8')
+        except UnicodeDecodeError:
+            content_text = data_file.file_content.decode('utf-8-sig')
+        
+        items = []
+        for index, line in enumerate(content_text.strip().split('\n')):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                items.append({
+                    'index': index,
+                    'data': obj
+                })
+            except json.JSONDecodeError as e:
+                items.append({
+                    'index': index,
+                    'data': {'_raw': line, '_error': str(e)}
+                })
+        
+        return JSONResponse({
+            'success': True,
+            'file_id': file_id,
+            'filename': data_file.filename,
+            'total_lines': len(items),
+            'items': items
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取文件内容失败: {str(e)}"
+        )
+
+
+def validate_turns_balance(turns: list) -> tuple[bool, str]:
+    """
+    验证对话轮次中 Human 和 Assistant 数量是否一致
+    
+    Args:
+        turns: 对话轮次列表
+        
+    Returns:
+        tuple: (是否合法, 错误信息)
+    """
+    if not turns:
+        return True, ""
+    
+    human_count = sum(1 for t in turns if t.get('role') == 'Human')
+    assistant_count = sum(1 for t in turns if t.get('role') == 'Assistant')
+    
+    if human_count != assistant_count:
+        return False, f"Human 和 Assistant 数量不一致（Human: {human_count}, Assistant: {assistant_count}），请保证对话轮次成对出现"
+    
+    return True, ""
+
+
+@router.put('/data_files/{file_id}/content/{item_index}')
+async def update_data_file_item(file_id: int, item_index: int, request: Request, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+    """更新数据文件中的单条数据"""
+    try:
+        data = await request.json()
+        new_content = data.get('content')
+        
+        if not new_content:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="缺少数据内容"
+            )
+        
+        # 验证 Human 和 Assistant 数量是否一致
+        turns = new_content.get('turns', [])
+        is_valid, error_msg = validate_turns_balance(turns)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg
+            )
+        
+        # 获取文件
+        data_file = get_data_file_by_id(db, file_id, current_user.id)
+        if not data_file:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="文件不存在或无权访问"
+            )
+        
+        # 解析JSONL内容
+        try:
+            content_text = data_file.file_content.decode('utf-8')
+        except UnicodeDecodeError:
+            content_text = data_file.file_content.decode('utf-8-sig')
+        
+        lines = content_text.strip().split('\n')
+        
+        # 检查索引是否有效
+        if item_index < 0 or item_index >= len(lines):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"索引 {item_index} 超出范围，文件共有 {len(lines)} 条数据"
+            )
+        
+        # 更新指定行
+        lines[item_index] = json.dumps(new_content, ensure_ascii=False)
+        
+        # 重新组合内容
+        new_file_content = '\n'.join(lines) + '\n'
+        new_file_bytes = new_file_content.encode('utf-8')
+        
+        # 更新数据库
+        data_file.file_content = new_file_bytes
+        data_file.file_size = len(new_file_bytes)
+        db.commit()
+        
+        return JSONResponse({
+            'success': True,
+            'message': '数据更新成功'
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"更新数据失败: {str(e)}"
+        )
+
+
+@router.post('/data_files/{file_id}/content')
+async def add_data_file_item(file_id: int, request: Request, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+    """向数据文件添加新数据"""
+    try:
+        data = await request.json()
+        new_content = data.get('content')
+        
+        if not new_content:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="缺少数据内容"
+            )
+        
+        # 验证 Human 和 Assistant 数量是否一致
+        turns = new_content.get('turns', [])
+        is_valid, error_msg = validate_turns_balance(turns)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg
+            )
+        
+        # 获取文件
+        data_file = get_data_file_by_id(db, file_id, current_user.id)
+        if not data_file:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="文件不存在或无权访问"
+            )
+        
+        # 解析现有JSONL内容
+        try:
+            content_text = data_file.file_content.decode('utf-8')
+        except UnicodeDecodeError:
+            content_text = data_file.file_content.decode('utf-8-sig')
+        
+        # 处理空文件情况
+        lines = [line for line in content_text.strip().split('\n') if line.strip()]
+        
+        # 添加新行
+        new_line = json.dumps(new_content, ensure_ascii=False)
+        lines.append(new_line)
+        
+        # 重新组合内容
+        new_file_content = '\n'.join(lines) + '\n'
+        new_file_bytes = new_file_content.encode('utf-8')
+        
+        # 更新数据库
+        data_file.file_content = new_file_bytes
+        data_file.file_size = len(new_file_bytes)
+        db.commit()
+        
+        return JSONResponse({
+            'success': True,
+            'message': '数据添加成功',
+            'new_index': len(lines) - 1,
+            'total_count': len(lines)
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"添加数据失败: {str(e)}"
+        )
+
+
+@router.delete('/data_files/{file_id}/content/batch')
+async def batch_delete_data_file_items(file_id: int, request: Request, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+    """批量删除数据文件中的多条数据"""
+    try:
+        data = await request.json()
+        indices = data.get('indices', [])  # 要删除的索引列表
+        
+        if not indices:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="请指定要删除的数据索引"
+            )
+        
+        # 获取文件
+        data_file = get_data_file_by_id(db, file_id, current_user.id)
+        if not data_file:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="文件不存在或无权访问"
+            )
+        
+        # 解析JSONL内容
+        try:
+            content_text = data_file.file_content.decode('utf-8')
+        except UnicodeDecodeError:
+            content_text = data_file.file_content.decode('utf-8-sig')
+        
+        lines = content_text.strip().split('\n')
+        total_lines = len(lines)
+        
+        # 验证索引是否有效
+        invalid_indices = [i for i in indices if i < 0 or i >= total_lines]
+        if invalid_indices:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"索引超出范围: {invalid_indices}，文件共有 {total_lines} 条数据（索引 0-{total_lines-1}）"
+            )
+        
+        # 删除指定索引的行（保留不在 indices 中的行）
+        indices_set = set(indices)
+        new_lines = [line for i, line in enumerate(lines) if i not in indices_set]
+        
+        if not new_lines:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="不能删除所有数据，文件至少需要保留一条数据"
+            )
+        
+        # 重新组合内容
+        new_file_content = '\n'.join(new_lines) + '\n'
+        new_file_bytes = new_file_content.encode('utf-8')
+        
+        # 更新数据库
+        data_file.file_content = new_file_bytes
+        data_file.file_size = len(new_file_bytes)
+        db.commit()
+        
+        deleted_count = len(indices)
+        return JSONResponse({
+            'success': True,
+            'message': f'成功删除 {deleted_count} 条数据',
+            'deleted_count': deleted_count,
+            'remaining_count': len(new_lines)
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"批量删除失败: {str(e)}"
         )
 
 
@@ -765,6 +1051,15 @@ async def update_generated_data_item(data_id: int, request: Request, current_use
                 detail="缺少数据内容"
             )
         
+        # 验证 Human 和 Assistant 数量是否一致
+        turns = new_content.get('turns', [])
+        is_valid, error_msg = validate_turns_balance(turns)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg
+            )
+        
         # 更新数据
         success = update_generated_data(data_id, current_user.id, new_content)
         
@@ -813,6 +1108,122 @@ async def confirm_generated_data_item(data_id: int, request: Request, current_us
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"确认数据失败: {str(e)}"
+        )
+
+
+@router.post('/generated_data/{task_id}')
+async def add_generated_data_item(task_id: str, request: Request, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+    """向任务添加新的生成数据"""
+    try:
+        from database.models import GeneratedData, Task
+        from urllib.parse import unquote
+        
+        data = await request.json()
+        new_content = data.get('content')
+        
+        if not new_content:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="缺少数据内容"
+            )
+        
+        # 验证 Human 和 Assistant 数量是否一致
+        turns = new_content.get('turns', [])
+        is_valid, error_msg = validate_turns_balance(turns)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg
+            )
+        
+        # 确保 task_id 正确解码
+        decoded_task_id = unquote(task_id)
+        
+        # 检查任务是否存在
+        task = db.query(Task).filter(
+            Task.task_id == decoded_task_id,
+            Task.user_id == current_user.id
+        ).first()
+        
+        if not task:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="任务不存在或无权访问"
+            )
+        
+        # 创建新的生成数据
+        new_data = GeneratedData(
+            task_id=decoded_task_id,
+            user_id=current_user.id,
+            data=new_content,
+            is_confirmed=False
+        )
+        db.add(new_data)
+        db.commit()
+        db.refresh(new_data)
+        
+        return JSONResponse({
+            'success': True,
+            'message': '数据添加成功',
+            'data_id': new_data.id
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"添加数据失败: {str(e)}"
+        )
+
+
+@router.delete('/generated_data/batch')
+async def batch_delete_generated_data(request: Request, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+    """批量删除生成数据"""
+    try:
+        from database.models import GeneratedData
+        
+        data = await request.json()
+        data_ids = data.get('data_ids', [])  # 要删除的数据 ID 列表
+        
+        if not data_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="请指定要删除的数据"
+            )
+        
+        # 查找属于当前用户的数据
+        existing_data = db.query(GeneratedData).filter(
+            GeneratedData.id.in_(data_ids),
+            GeneratedData.user_id == current_user.id
+        ).all()
+        
+        if not existing_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="未找到要删除的数据或无权删除"
+            )
+        
+        # 删除数据
+        deleted_count = 0
+        for item in existing_data:
+            db.delete(item)
+            deleted_count += 1
+        
+        db.commit()
+        
+        return JSONResponse({
+            'success': True,
+            'message': f'成功删除 {deleted_count} 条数据',
+            'deleted_count': deleted_count
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"批量删除失败: {str(e)}"
         )
 
 

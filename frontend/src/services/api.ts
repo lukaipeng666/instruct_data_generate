@@ -151,6 +151,41 @@ export const dataService = {
       data: response.data.data,
     };
   },
+  
+  // 获取文件内容（带索引，用于编辑）
+  getDataFileContentEditable: async (fileId: number): Promise<{ filename: string; total_lines: number; items: { index: number; data: any }[] }> => {
+    const response = await api.get<{ success: boolean; file_id: number; filename: string; total_lines: number; items: { index: number; data: any }[] }>(`/data_files/${fileId}/content/editable`);
+    return {
+      filename: response.data.filename,
+      total_lines: response.data.total_lines,
+      items: response.data.items,
+    };
+  },
+  
+  // 更新文件中的单条数据
+  updateDataFileItem: async (fileId: number, itemIndex: number, content: any): Promise<void> => {
+    await api.put(`/data_files/${fileId}/content/${itemIndex}`, { content });
+  },
+  
+  // 批量删除文件中的数据
+  batchDeleteDataFileItems: async (fileId: number, indices: number[]): Promise<{ deleted_count: number; remaining_count: number }> => {
+    const response = await api.delete<{ success: boolean; deleted_count: number; remaining_count: number; message: string }>(`/data_files/${fileId}/content/batch`, {
+      data: { indices }
+    });
+    return {
+      deleted_count: response.data.deleted_count,
+      remaining_count: response.data.remaining_count
+    };
+  },
+  
+  // 添加新数据到文件
+  addDataFileItem: async (fileId: number, content: any): Promise<{ new_index: number; total_count: number }> => {
+    const response = await api.post<{ success: boolean; new_index: number; total_count: number; message: string }>(`/data_files/${fileId}/content`, { content });
+    return {
+      new_index: response.data.new_index,
+      total_count: response.data.total_count
+    };
+  },
 };
 
 // 管理员服务
@@ -286,6 +321,21 @@ export const reportService = {
   // 确认单条生成数据可用
   confirmGeneratedData: async (dataId: number, isConfirmed: boolean = true): Promise<void> => {
     await api.post(`/generated_data/${dataId}/confirm`, { is_confirmed: isConfirmed });
+  },
+  
+  // 批量删除生成数据
+  batchDeleteGeneratedData: async (dataIds: number[]): Promise<{ deleted_count: number }> => {
+    const response = await api.delete<{ success: boolean; deleted_count: number; message: string }>('/generated_data/batch', {
+      data: { data_ids: dataIds }
+    });
+    return { deleted_count: response.data.deleted_count };
+  },
+  
+  // 添加新的生成数据
+  addGeneratedData: async (taskId: string, content: any): Promise<{ data_id: number }> => {
+    const encodedTaskId = encodeURIComponent(taskId);
+    const response = await api.post<{ success: boolean; data_id: number; message: string }>(`/generated_data/${encodedTaskId}`, { content });
+    return { data_id: response.data.data_id };
   },
   
   // 下载生成数据（JSONL格式）
