@@ -22,7 +22,8 @@ from config import get_cors_config, get_web_config, get_frontend_url
 from database import init_database
 
 # 导入所有路由模块
-from routes import auth_routes, data_routes, task_routes, admin_routes, model_routes
+from routes import auth_routes, task_routes, admin_routes, model_routes
+from routes import data_file_routes, generated_data_routes, report_routes, file_conversion_routes
 
 # 读取配置
 _web_config = get_web_config()
@@ -60,7 +61,10 @@ init_database()
 
 # 注册所有路由
 app.include_router(auth_routes.router)
-app.include_router(data_routes.router)
+app.include_router(data_file_routes.router)
+app.include_router(generated_data_routes.router)
+app.include_router(report_routes.router)
+app.include_router(file_conversion_routes.router)
 app.include_router(task_routes.router)
 app.include_router(model_routes.router)
 app.include_router(admin_routes.router)

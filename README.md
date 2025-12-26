@@ -8,7 +8,10 @@
 - **任务管理**：任务创建、实时进度监控、任务停止与删除
 - **模型管理**：支持配置多个模型服务，灵活切换
 - **用户系统**：完整的用户注册、登录、权限管理（管理员/普通用户）
-- **数据管理**：文件上传、数据预览、生成结果导出
+- **数据文件管理**：支持文件上传、批量操作、在线编辑、格式转换（CSV/JSONL）
+- **生成数据管理**：生成结果的查看、编辑、确认、批量导出和删除
+- **报告管理**：任务报告列表、数据查看和批量删除
+- **文件转换**：批量转换数据文件格式（CSV <-> JSONL），支持打包下载
 - **实时进度**：基于 Redis 的任务进度追踪，支持 SSE 实时推送
 - **数据质量评估**：自动评分机制，确保生成数据质量
 
@@ -36,10 +39,15 @@ bowengen/
 │   ├── app.py                    # FastAPI 主入口
 │   ├── routes/                   # 路由模块
 │   │   ├── auth_routes.py        # 认证相关路由
-│   │   ├── data_routes.py        # 数据管理路由
 │   │   ├── task_routes.py        # 任务管理路由
 │   │   ├── model_routes.py       # 模型配置路由
-│   │   └── admin_routes.py       # 管理员路由
+│   │   ├── admin_routes.py       # 管理员路由
+│   │   ├── data_file_routes.py   # 数据文件管理路由
+│   │   ├── generated_data_routes.py  # 生成数据管理路由
+│   │   ├── report_routes.py      # 报告管理路由
+│   │   ├── file_conversion_routes.py # 文件转换路由
+│   │   ├── file_conversion_utils.py  # 文件转换工具函数
+│   │   └── validation_utils.py   # 验证工具函数
 │   └── services/                 # 服务层
 │       └── task_manager.py       # 任务管理器
 ├── call_model/                   # 模型调用模块
@@ -340,26 +348,58 @@ cd frontend && npm run dev
 
 ## API 接口
 
-### 认证相关
+### 认证相关 (auth_routes.py)
 - `POST /api/login` - 用户登录
 - `POST /api/register` - 用户注册
 - `GET /api/me` - 获取当前用户信息
 
-### 任务管理
+### 任务管理 (task_routes.py)
 - `POST /api/start` - 启动任务
 - `GET /api/tasks` - 获取任务列表
 - `GET /api/progress/{task_id}` - 获取任务进度 (SSE)
 - `GET /api/task_progress/{task_id}` - 获取任务进度 (JSON)
+- `GET /api/status/{task_id}` - 获取任务状态
+- `GET /api/active_task` - 获取当前活动的任务
+- `GET /api/progress_unified/{task_id}` - 获取统一格式的任务进度
 - `POST /api/stop/{task_id}` - 停止任务
 - `DELETE /api/task/{task_id}` - 删除任务
 
-### 数据管理
-- `POST /api/upload` - 上传数据文件
-- `GET /api/files` - 获取文件列表
-- `GET /api/generated-data/{task_id}` - 获取生成数据
-- `GET /api/export/{task_id}` - 导出数据
+### 数据文件管理 (data_file_routes.py)
+- `GET /api/task_types` - 获取任务类型列表
+- `GET /api/data_files` - 获取数据文件列表
+- `POST /api/data_files/upload` - 上传数据文件
+- `DELETE /api/data_files/{file_id}` - 删除数据文件
+- `POST /api/data_files/batch_delete` - 批量删除数据文件
+- `GET /api/data_files/{file_id}/download` - 下载原始数据文件 (JSONL)
+- `GET /api/data_files/{file_id}/download_csv` - 下载 CSV 格式数据
+- `GET /api/data_files/{file_id}/content` - 获取数据文件内容
+- `GET /api/data_files/{file_id}/content/editable` - 获取可编辑的数据文件内容
+- `PUT /api/data_files/{file_id}/content/{item_index}` - 更新数据文件中的特定项
+- `POST /api/data_files/{file_id}/content` - 添加新的数据项到文件
+- `DELETE /api/data_files/{file_id}/content/batch` - 批量删除数据项
+- `POST /api/data_files/batch_download` - 批量下载数据文件
 
-### 模型管理
+### 生成数据管理 (generated_data_routes.py)
+- `GET /api/generated_data/{task_id}/download` - 下载生成的数据 (JSONL)
+- `GET /api/generated_data/{task_id}/info` - 获取生成数据的信息
+- `GET /api/generated_data/{task_id}/download_csv` - 下载生成的数据 (CSV)
+- `PUT /api/generated_data/{data_id}` - 更新生成数据
+- `POST /api/generated_data/{data_id}/confirm` - 确认生成数据
+- `POST /api/generated_data/{task_id}` - 添加生成数据
+- `DELETE /api/generated_data/batch` - 批量删除生成数据
+
+### 报告管理 (report_routes.py)
+- `GET /api/reports` - 获取报告列表
+- `GET /api/reports/{task_id}/data` - 获取报告数据
+- `GET /api/reports/{task_id}/data/editable` - 获取可编辑的报告数据
+- `DELETE /api/reports/{task_id}` - 删除报告
+- `POST /api/reports/batch_delete` - 批量删除报告
+
+### 文件转换 (file_conversion_routes.py)
+- `POST /api/data_files/batch_convert` - 批量转换数据文件格式 (CSV <-> JSONL)
+- `POST /api/convert_files` - 直接上传并转换文件
+
+### 模型管理 (model_routes.py)
 - `GET /api/models` - 获取模型列表
 - `POST /api/models` - 添加模型配置
 - `PUT /api/models/{id}` - 更新模型配置
@@ -401,3 +441,8 @@ cd frontend && npm run dev
 - 实现基于 Redis 的任务进度追踪
 - 生成数据存储到 SQL 数据库
 - 优化分布式并行处理性能
+- 新增数据文件管理功能（上传、编辑、删除、批量操作）
+- 新增生成数据管理功能（查看、编辑、确认、导出）
+- 新增报告管理功能
+- 新增文件格式转换功能（CSV <-> JSONL）
+- 完善数据验证机制
