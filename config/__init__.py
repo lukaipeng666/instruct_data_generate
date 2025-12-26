@@ -73,6 +73,7 @@ def get_web_config() -> Dict[str, Any]:
     return {
         'host': get_config('web_service.host', '0.0.0.0'),
         'port': get_config('web_service.port', 5000),
+        'production_mode': get_config('web_service.production_mode', False),
     }
 
 

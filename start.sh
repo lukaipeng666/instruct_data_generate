@@ -27,6 +27,11 @@ web_config = config.get('web_service', {})
 print(web_config.get('host', '0.0.0.0'))
 print(web_config.get('port', 5000))
 
+# HTTPS 配置
+print('true' if web_config.get('https_enabled', False) else 'false')
+print(web_config.get('ssl_certfile', 'cert.pem'))
+print(web_config.get('ssl_keyfile', 'key.pem'))
+
 # 前端配置
 frontend_config = config.get('frontend', {})
 frontend_url = frontend_config.get('url', 'http://localhost:3000')
@@ -89,11 +94,15 @@ REDIS_HOST=$(echo "$ALL_CONFIG" | sed -n '1p')
 REDIS_PORT=$(echo "$ALL_CONFIG" | sed -n '2p')
 BACKEND_HOST=$(echo "$ALL_CONFIG" | sed -n '3p')
 BACKEND_PORT=$(echo "$ALL_CONFIG" | sed -n '4p')
-FRONTEND_PORT=$(echo "$ALL_CONFIG" | sed -n '5p')
+HTTPS_ENABLED=$(echo "$ALL_CONFIG" | sed -n '5p')
+SSL_CERTFILE=$(echo "$ALL_CONFIG" | sed -n '6p')
+SSL_KEYFILE=$(echo "$ALL_CONFIG" | sed -n '7p')
+FRONTEND_PORT=$(echo "$ALL_CONFIG" | sed -n '8p')
 
 echo "配置信息:"
 echo "  - Redis: $REDIS_HOST:$REDIS_PORT"
 echo "  - 后端: $BACKEND_HOST:$BACKEND_PORT"
+echo "  - HTTPS: $HTTPS_ENABLED"
 echo "  - 前端端口: $FRONTEND_PORT"
 
 # 检查 Redis 是否已在运行
@@ -125,7 +134,23 @@ fi
 
 # 启动后端服务
 echo ""
-echo "【后端】启动API服务器 (${BACKEND_PORT}端口)..."
+if [ "$HTTPS_ENABLED" = "true" ]; then
+    echo "【后端】启动API服务器 (HTTPS, ${BACKEND_PORT}端口)..."
+    
+    # 检查证书文件是否存在
+    if [ ! -f "$SSL_CERTFILE" ] || [ ! -f "$SSL_KEYFILE" ]; then
+        echo "证书文件不存在，正在生成自签名证书..."
+        openssl req -x509 -newkey rsa:2048 -keyout "$SSL_KEYFILE" -out "$SSL_CERTFILE" -days 365 -nodes -subj "/CN=localhost" 2>/dev/null
+        echo "✅ 证书生成成功"
+    fi
+    
+    SSL_ARGS="--ssl-keyfile=$SSL_KEYFILE --ssl-certfile=$SSL_CERTFILE"
+    PROTOCOL="https"
+else
+    echo "【后端】启动API服务器 (HTTP, ${BACKEND_PORT}端口)..."
+    SSL_ARGS=""
+    PROTOCOL="http"
+fi
 if [ -f log/web_app.pid ]; then
     PID=$(cat log/web_app.pid)
     if ps -p $PID > /dev/null 2>&1; then
@@ -134,7 +159,7 @@ if [ -f log/web_app.pid ]; then
         rm log/web_app.pid
         # 启动后端
         if python3 -c "import uvicorn" 2>/dev/null; then
-            nohup python3 -m uvicorn app.app:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" > log/web_app.log 2>&1 &
+            nohup python3 -m uvicorn app.app:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" $SSL_ARGS > log/web_app.log 2>&1 &
         else
             nohup python3 ./app/app.py > log/web_app.log 2>&1 &
         fi
@@ -145,7 +170,7 @@ if [ -f log/web_app.pid ]; then
     fi
 else
     if python3 -c "import uvicorn" 2>/dev/null; then
-        nohup python3 -m uvicorn app.app:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" > log/web_app.log 2>&1 &
+        nohup python3 -m uvicorn app.app:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" $SSL_ARGS > log/web_app.log 2>&1 &
     else
         nohup python3 ./app/app.py > log/web_app.log 2>&1 &
     fi

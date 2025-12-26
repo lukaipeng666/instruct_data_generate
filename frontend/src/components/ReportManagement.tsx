@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { reportService } from '../services/api';
 import type { Report } from '../types';
+import ConfirmDialog from './ConfirmDialog';
 
 export default function ReportManagement() {
   const navigate = useNavigate();
@@ -10,6 +11,13 @@ export default function ReportManagement() {
   const [error, setError] = useState('');
   const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
   const [deleting, setDeleting] = useState(false);
+  
+  // 确认弹窗状态
+  const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; taskId: string | null; isBatch: boolean }>({
+    isOpen: false,
+    taskId: null,
+    isBatch: false,
+  });
 
   useEffect(() => {
     loadReports();
@@ -72,16 +80,34 @@ export default function ReportManagement() {
   };
 
   const handleDeleteSingle = async (taskId: string) => {
-    if (!confirm(`确认删除报告 ${taskId} 吗？删除后不可恢复。`)) {
-      return;
-    }
+    setDeleteConfirm({ isOpen: true, taskId, isBatch: false });
+  };
+
+  const confirmDelete = async () => {
+    const { taskId, isBatch } = deleteConfirm;
+    setDeleteConfirm({ isOpen: false, taskId: null, isBatch: false });
 
     setDeleting(true);
     setError('');
     try {
-      await reportService.deleteReport(taskId);
-      await loadReports();
-      setSelectedReportIds([]);
+      if (isBatch) {
+        // 批量删除
+        if (selectedReportIds.length === 0) {
+          setError('请至少选择一个报告');
+          return;
+        }
+        const result = await reportService.batchDeleteReports(selectedReportIds);
+        if (result.errors && result.errors.length > 0) {
+          setError(`部分删除失败: ${result.errors.map((e: any) => e.error).join(', ')}`);
+        }
+        await loadReports();
+        setSelectedReportIds([]);
+      } else {
+        // 单个删除
+        await reportService.deleteReport(taskId!);
+        await loadReports();
+        setSelectedReportIds([]);
+      }
     } catch (err: any) {
       setError(err.response?.data?.detail || '删除报告失败');
     } finally {
@@ -94,25 +120,7 @@ export default function ReportManagement() {
       setError('请至少选择一个报告');
       return;
     }
-
-    if (!confirm(`确认删除选中的 ${selectedReportIds.length} 个报告吗？删除后不可恢复。`)) {
-      return;
-    }
-
-    setDeleting(true);
-    setError('');
-    try {
-      const result = await reportService.batchDeleteReports(selectedReportIds);
-      if (result.errors && result.errors.length > 0) {
-        setError(`部分删除失败: ${result.errors.map((e: any) => e.error).join(', ')}`);
-      }
-      await loadReports();
-      setSelectedReportIds([]);
-    } catch (err: any) {
-      setError(err.response?.data?.detail || '批量删除报告失败');
-    } finally {
-      setDeleting(false);
-    }
+    setDeleteConfirm({ isOpen: true, taskId: null, isBatch: true });
   };
 
   const formatDate = (dateStr: string | null) => {
@@ -284,6 +292,20 @@ export default function ReportManagement() {
           </div>
         )}
       </div>
+
+      {/* 删除报告确认弹窗 */}
+      <ConfirmDialog
+        isOpen={deleteConfirm.isOpen}
+        title={deleteConfirm.isBatch ? '批量删除报告' : '删除报告'}
+        message={deleteConfirm.isBatch 
+          ? `确认删除选中的 ${selectedReportIds.length} 个报告吗？删除后不可恢复。`
+          : `确认删除报告 ${deleteConfirm.taskId} 吗？删除后不可恢复。`}
+        type="danger"
+        confirmText="删除"
+        cancelText="取消"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ isOpen: false, taskId: null, isBatch: false })}
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, FormEvent } from 'react';
 import { taskService, dataService } from '../services/api';
 import type { TaskParams, DataFile, ModelConfig } from '../types';
+import ConfirmDialog from './ConfirmDialog';
 
 // 任务进度数据类型
 interface TaskProgressData {
@@ -25,7 +26,9 @@ export default function TaskManagement() {
   const [progress, setProgress] = useState<string[]>([]);
   const [taskStatus, setTaskStatus] = useState<'idle' | 'running' | 'finished' | 'error'>('idle');
   const [taskProgress, setTaskProgress] = useState<TaskProgressData | null>(null);
-  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const progressIntervalRef = useRef<number | null>(null);
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
 
   const [formData, setFormData] = useState<TaskParams>({
     input_file: '',
@@ -229,8 +232,13 @@ export default function TaskManagement() {
 
   const handleStop = async () => {
     if (!currentTaskId) return;
-    if (!confirm('确定要停止当前任务吗？')) return;
+    setShowStopConfirm(true);
+  };
 
+  const confirmStop = async () => {
+    setShowStopConfirm(false);
+    if (!currentTaskId) return;
+    
     try {
       await taskService.stopTask(currentTaskId);
       setTaskStatus('idle');
@@ -322,51 +330,6 @@ export default function TaskManagement() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">批处理大小</label>
-              <input
-                type="number"
-                value={formData.batch_size}
-                onChange={(e) => setFormData((prev) => ({ ...prev, batch_size: parseInt(e.target.value) }))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                min="1"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">最大并发数</label>
-              <input
-                type="number"
-                value={formData.max_concurrent}
-                onChange={(e) => setFormData((prev) => ({ ...prev, max_concurrent: parseInt(e.target.value) }))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                min="1"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">最低评分 (0-10)</label>
-              <input
-                type="number"
-                value={formData.min_score}
-                onChange={(e) => setFormData((prev) => ({ ...prev, min_score: parseInt(e.target.value) }))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                min="0"
-                max="10"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">每个样本的变体数量</label>
-              <input
-                type="number"
-                value={formData.variants_per_sample}
-                onChange={(e) => setFormData((prev) => ({ ...prev, variants_per_sample: parseInt(e.target.value) }))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                min="1"
-              />
-            </div>
-
-            <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">数据使用轮次</label>
               <input
                 type="number"
@@ -377,16 +340,82 @@ export default function TaskManagement() {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">重试次数</label>
-              <input
-                type="number"
-                value={formData.retry_times}
-                onChange={(e) => setFormData((prev) => ({ ...prev, retry_times: parseInt(e.target.value) }))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                min="0"
-              />
+            {/* Advanced Settings Toggle */}
+            <div className="md:col-span-2">
+              <button
+                type="button"
+                onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-50 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors flex items-center justify-between text-left"
+              >
+                <span className="text-sm font-medium text-gray-700">⚙️ 基础配置</span>
+                <span className="text-gray-500 transform transition-transform duration-200">
+                  {showAdvancedSettings ? '▼' : '▶'}
+                </span>
+              </button>
             </div>
+
+            {/* Advanced Settings Panel */}
+            {showAdvancedSettings && (
+              <div className="md:col-span-2 space-y-6 pt-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">批处理大小</label>
+                    <input
+                      type="number"
+                      value={formData.batch_size}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, batch_size: parseInt(e.target.value) }))}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      min="1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">最大并发数</label>
+                    <input
+                      type="number"
+                      value={formData.max_concurrent}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, max_concurrent: parseInt(e.target.value) }))}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      min="1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">最低评分 (0-10)</label>
+                    <input
+                      type="number"
+                      value={formData.min_score}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, min_score: parseInt(e.target.value) }))}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      min="0"
+                      max="10"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">每个样本的变体数量</label>
+                    <input
+                      type="number"
+                      value={formData.variants_per_sample}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, variants_per_sample: parseInt(e.target.value) }))}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      min="1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">重试次数</label>
+                    <input
+                      type="number"
+                      value={formData.retry_times}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, retry_times: parseInt(e.target.value) }))}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      min="0"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">特殊任务提示词</label>
@@ -541,6 +570,18 @@ export default function TaskManagement() {
           )}
         </div>
       </div>
+
+      {/* 停止任务确认弹窗 */}
+      <ConfirmDialog
+        isOpen={showStopConfirm}
+        title="停止任务"
+        message="确定要停止当前任务吗？"
+        type="warning"
+        confirmText="停止任务"
+        cancelText="取消"
+        onConfirm={confirmStop}
+        onCancel={() => setShowStopConfirm(false)}
+      />
     </div>
   );
 }

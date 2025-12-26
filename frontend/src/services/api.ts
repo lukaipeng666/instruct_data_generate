@@ -161,6 +161,269 @@ export const dataService = {
       items: response.data.items,
     };
   },
+
+  // 下载文件
+  downloadDataFile: async (fileId: number): Promise<void> => {
+    const encodedFileId = encodeURIComponent(fileId.toString());
+    try {
+      const response = await api.get(`/data_files/${encodedFileId}/download`, {
+        responseType: 'blob',
+      });
+      
+      // 检查响应是否是错误的 JSON
+      const contentType = response.headers['content-type'];
+      if (contentType && contentType.includes('application/json')) {
+        const text = await response.data.text();
+        const errorData = JSON.parse(text);
+        throw new Error(errorData.detail || '下载失败');
+      }
+      
+      // 从 Content-Disposition 头中提取文件名
+      let filename = `data_file_${fileId}.jsonl`; // 默认文件名
+      const contentDisposition = response.headers['content-disposition'];
+      if (contentDisposition) {
+        // 尝试解析 filename*=UTF-8''xxx 格式
+        const filenameStarMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/i);
+        if (filenameStarMatch && filenameStarMatch[1]) {
+          filename = decodeURIComponent(filenameStarMatch[1]);
+        } else {
+          // 尝试解析 filename="xxx" 格式
+          const filenameMatch = contentDisposition.match(/filename="?([^";\n]+)"?/i);
+          if (filenameMatch && filenameMatch[1]) {
+            filename = filenameMatch[1];
+          }
+        }
+      }
+      
+      // 创建下载链接
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      if (error.response) {
+        let errorMessage = `下载失败: HTTP ${error.response.status}`;
+        
+        if (error.response.data instanceof Blob) {
+          try {
+            const text = await error.response.data.text();
+            const errorData = JSON.parse(text);
+            if (errorData.detail) {
+              errorMessage = errorData.detail;
+            }
+          } catch {
+            // 无法解析 blob
+          }
+        } else if (error.response.data?.detail) {
+          errorMessage = error.response.data.detail;
+        }
+        
+        throw new Error(errorMessage);
+      }
+      
+      throw new Error(error.message || '下载失败: 未知错误');
+    }
+  },
+
+  // 批量下载文件（打包成zip）
+  batchDownloadDataFiles: async (fileIds: number[]): Promise<void> => {
+    if (fileIds.length === 0) return;
+    
+    try {
+      const response = await api.post('/data_files/batch_download', { file_ids: fileIds }, {
+        responseType: 'blob',
+      });
+      
+      // 检查响应类型
+      const contentType = response.headers['content-type'];
+      if (contentType && contentType.includes('application/json')) {
+        const text = await response.data.text();
+        const errorData = JSON.parse(text);
+        throw new Error(errorData.detail || '批量下载失败');
+      }
+      
+      // 创建下载链接（zip文件）
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `data_files_${fileIds.length}.zip`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      if (error.response) {
+        let errorMessage = `批量下载失败: HTTP ${error.response.status}`;
+        
+        if (error.response.data instanceof Blob) {
+          try {
+            const text = await error.response.data.text();
+            const errorData = JSON.parse(text);
+            if (errorData.detail) {
+              errorMessage = errorData.detail;
+            }
+          } catch {
+            // 无法解析 blob
+          }
+        } else if (error.response.data?.detail) {
+          errorMessage = error.response.data.detail;
+        }
+        
+        throw new Error(errorMessage);
+      }
+      
+      throw new Error(error.message || '批量下载失败: 未知错误');
+    }
+  },
+
+  // 批量转换文件格式（CSV<->JSONL）并下载
+  batchConvertDataFiles: async (fileIds: number[]): Promise<void> => {
+    if (fileIds.length === 0) return;
+
+    try {
+      const response = await api.post('/data_files/batch_convert', { file_ids: fileIds }, {
+        responseType: 'blob',
+      });
+
+      // 检查响应类型
+      const contentType = response.headers['content-type'];
+      if (contentType && contentType.includes('application/json')) {
+        const text = await response.data.text();
+        const errorData = JSON.parse(text);
+        throw new Error(errorData.detail || '批量转换失败');
+      }
+
+      // 创建下载链接（zip文件）
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `converted_files_${fileIds.length}.zip`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      if (error.response) {
+        let errorMessage = `批量转换失败: HTTP ${error.response.status}`;
+
+        if (error.response.data instanceof Blob) {
+          try {
+            const text = await error.response.data.text();
+            const errorData = JSON.parse(text);
+            if (errorData.detail) {
+              errorMessage = errorData.detail;
+            }
+          } catch {
+            // 无法解析 blob
+          }
+        } else if (error.response.data?.detail) {
+          errorMessage = error.response.data.detail;
+        }
+
+        throw new Error(errorMessage);
+      }
+
+      throw new Error(error.message || '批量转换失败: 未知错误');
+    }
+  },
+
+  // 直接上传文件并转换格式（不保存到数据库）
+  convertFilesDirect: async (files: File[]): Promise<void> => {
+    if (files.length === 0) return;
+
+    try {
+      const formData = new FormData();
+      files.forEach(file => {
+        formData.append('files', file);
+      });
+
+      const response = await api.post('/convert_files', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        responseType: 'blob',
+      });
+
+      // 检查响应类型
+      const contentType = response.headers['content-type'];
+      if (contentType && contentType.includes('application/json')) {
+        const text = await response.data.text();
+        const errorData = JSON.parse(text);
+        throw new Error(errorData.detail || '文件转换失败');
+      }
+
+      // 从 Content-Disposition 头中提取文件名
+      let filename = '';
+      const contentDisposition = response.headers['content-disposition'];
+      if (contentDisposition) {
+        // 尝试解析 filename*=UTF-8''xxx 格式
+        const filenameStarMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/i);
+        if (filenameStarMatch && filenameStarMatch[1]) {
+          filename = decodeURIComponent(filenameStarMatch[1]);
+        } else {
+          // 尝试解析 filename="xxx" 格式
+          const filenameMatch = contentDisposition.match(/filename="?([^";\n]+)"?/i);
+          if (filenameMatch && filenameMatch[1]) {
+            filename = filenameMatch[1];
+          }
+        }
+      }
+
+      // 如果没有提取到文件名，使用默认名称
+      if (!filename) {
+        if (files.length === 1) {
+          // 单个文件：根据原文件名生成
+          const originalName = files[0].name;
+          if (originalName.endsWith('.csv')) {
+            filename = originalName.slice(0, -4) + '.jsonl';
+          } else if (originalName.endsWith('.jsonl')) {
+            filename = originalName.slice(0, -6) + '.csv';
+          } else {
+            filename = 'converted_file';
+          }
+        } else {
+          // 多个文件：使用默认ZIP名称
+          filename = 'converted_files.zip';
+        }
+      }
+
+      // 创建下载链接
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      if (error.response) {
+        let errorMessage = `文件转换失败: HTTP ${error.response.status}`;
+
+        if (error.response.data instanceof Blob) {
+          try {
+            const text = await error.response.data.text();
+            const errorData = JSON.parse(text);
+            if (errorData.detail) {
+              errorMessage = errorData.detail;
+            }
+          } catch {
+            // 无法解析 blob
+          }
+        } else if (error.response.data?.detail) {
+          errorMessage = error.response.data.detail;
+        }
+
+        throw new Error(errorMessage);
+      }
+
+      throw new Error(error.message || '文件转换失败: 未知错误');
+    }
+  },
   
   // 更新文件中的单条数据
   updateDataFileItem: async (fileId: number, itemIndex: number, content: any): Promise<void> => {

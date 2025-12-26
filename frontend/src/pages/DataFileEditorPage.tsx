@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dataService } from '../services/api';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 // 可编辑数据项的类型
 interface EditableDataItem {
@@ -97,6 +98,13 @@ export default function DataFileEditorPage() {
     turns: [{ role: 'Human', text: '' }, { role: 'Assistant', text: '' }]
   });
   const [adding, setAdding] = useState(false);
+  
+  // 确认弹窗状态
+  const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; indices: number[] | null; message: string }>({
+    isOpen: false,
+    indices: null,
+    message: '',
+  });
 
   // 当前选中的数据
   const currentItem = dataItems[selectedIndex];
@@ -298,8 +306,11 @@ export default function DataFileEditorPage() {
       setError('请先选择要删除的数据');
       return;
     }
-    if (!confirm(`确定要删除选中的 ${selectedItems.size} 条数据吗？`)) return;
-    handleBatchDelete(Array.from(selectedItems));
+    setDeleteConfirm({
+      isOpen: true,
+      indices: Array.from(selectedItems),
+      message: `确定要删除选中的 ${selectedItems.size} 条数据吗？`
+    });
   };
 
   // 按范围删除
@@ -333,7 +344,19 @@ export default function DataFileEditorPage() {
       indices.push(i);
     }
     
-    if (!confirm(`确定要删除第 ${start} 到第 ${end} 条数据吗？共 ${indices.length} 条`)) return;
+    setDeleteConfirm({
+      isOpen: true,
+      indices,
+      message: `确定要删除第 ${start} 到第 ${end} 条数据吗？共 ${indices.length} 条`
+    });
+  };
+
+  // 确认删除
+  const confirmDelete = async () => {
+    const { indices } = deleteConfirm;
+    if (!indices) return;
+    
+    setDeleteConfirm({ isOpen: false, indices: null, message: '' });
     handleBatchDelete(indices);
   };
 
@@ -416,9 +439,9 @@ export default function DataFileEditorPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
+    <div className="h-screen bg-gray-100 flex flex-col overflow-hidden">
       {/* 顶部导航栏 */}
-      <header className="bg-white shadow-sm">
+      <header className="bg-white shadow-sm flex-shrink-0">
         <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
@@ -465,9 +488,9 @@ export default function DataFileEditorPage() {
 
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧数据列表 */}
-        <aside className="w-72 bg-white border-r border-gray-200 flex flex-col">
+        <aside className="w-72 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
           {/* 标题和统计 */}
-          <div className="p-4 border-b border-gray-200">
+          <div className="p-4 border-b border-gray-200 flex-shrink-0">
             <h2 className="text-sm font-medium text-gray-700">
               数据列表 ({dataItems.length} 条)
             </h2>
@@ -477,7 +500,7 @@ export default function DataFileEditorPage() {
           </div>
           
           {/* 批量删除控件 */}
-          <div className="p-3 border-b border-gray-200 space-y-2">
+          <div className="p-3 border-b border-gray-200 space-y-2 flex-shrink-0">
             {/* 添加数据按钮 */}
             <button
               onClick={() => setShowAddModal(true)}
@@ -534,7 +557,7 @@ export default function DataFileEditorPage() {
             </div>
           </div>
           
-          {/* 数据列表 */}
+          {/* 数据列表 - 可滚动 */}
           <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
             {dataItems.map((item, index) => (
               <div
@@ -821,6 +844,18 @@ export default function DataFileEditorPage() {
           </div>
         </footer>
       )}
+
+      {/* 删除确认弹窗 */}
+      <ConfirmDialog
+        isOpen={deleteConfirm.isOpen}
+        title="删除数据"
+        message={deleteConfirm.message}
+        type="danger"
+        confirmText="删除"
+        cancelText="取消"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ isOpen: false, indices: null, message: '' })}
+      />
     </div>
   );
 }

@@ -24,7 +24,24 @@ from database import init_database
 # 导入所有路由模块
 from routes import auth_routes, data_routes, task_routes, admin_routes, model_routes
 
-app = FastAPI(title="数据生成任务管理", version="1.0.0")
+# 读取配置
+_web_config = get_web_config()
+
+# 根据生产模式配置决定是否启用 API 文档
+if _web_config.get('production_mode', False):
+    # 生产模式：禁用所有 API 文档
+    app = FastAPI(
+        title="数据生成任务管理",
+        version="1.0.0",
+        docs_url=None,      # 禁用 /docs
+        redoc_url=None,     # 禁用 /redoc
+        openapi_url=None    # 禁用 /openapi.json
+    )
+    print("✅ 生产模式：API 文档已禁用")
+else:
+    # 开发模式：启用 API 文档
+    app = FastAPI(title="数据生成任务管理", version="1.0.0")
+    print("⚠️  开发模式：API 文档已启用 (/docs, /redoc)")
 
 # 从 config.yaml 读取 CORS 配置
 _cors_config = get_cors_config()
@@ -49,20 +66,22 @@ app.include_router(model_routes.router)
 app.include_router(admin_routes.router)
 
 
-# 从配置获取前端和后端地址
-_web_config = get_web_config()
+# 从配置获取前端地址
 _frontend_url = get_frontend_url()
 
 
 @app.get('/')
 def index():
-    """API根路径 - 返回API信息"""
-    return {
+    """获取 API 基本信息"""
+    response = {
         "message": "数据生成任务管理系统 API",
         "version": "1.0.0",
-        "frontend": f"请访问 {_frontend_url}",
-        "docs": f"API文档: http://localhost:{_web_config['port']}/docs"
+        "frontend": f"请访问 {_frontend_url}"
     }
+    # 开发模式才显示文档链接
+    if not _web_config.get('production_mode', False):
+        response["docs"] = f"API文档: http://localhost:{_web_config['port']}/docs"
+    return response
 
 
 if __name__ == '__main__':

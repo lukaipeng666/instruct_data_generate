@@ -18,6 +18,7 @@ def call_model_via_proxy(
     timeout: int = 300,
     is_vllm: bool = False,
     top_p: float = 1.0,
+    retry_times: int = 3,
 ) -> str:
     """
     通过后端代理调用模型API（带流量控制）
@@ -44,7 +45,8 @@ def call_model_via_proxy(
         "max_tokens": max_tokens,
         "timeout": timeout,
         "is_vllm": is_vllm,
-        "top_p": top_p
+        "top_p": top_p,
+        "retry_times": retry_times
     }
     
     # 计算请求超时时间：max_wait_time + 实际调用timeout + 缓冲
@@ -79,7 +81,7 @@ def call_model_api(
     model: str,
     temperature: float = 0.0,
     max_tokens: int = 8192,
-    retry_times: int = 3,  # 保留参数以保持接口兼容性，但不使用
+    retry_times: int = 3,
     timeout: int = 300,
     is_vllm: bool = False,
     top_p: float = 1.0,
@@ -100,7 +102,8 @@ def call_model_api(
         max_tokens=max_tokens,
         timeout=timeout,
         is_vllm=is_vllm,
-        top_p=top_p
+        top_p=top_p,
+        retry_times=retry_times
     )
 
 # 以下函数已删除，不再支持直接调用模式：
