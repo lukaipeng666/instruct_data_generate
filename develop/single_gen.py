@@ -14,6 +14,21 @@ from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 import sys
 import random
+import threading
+from threading import Lock
+
+# 线程局部随机数生成器，避免多线程共享全局随机状态
+_thread_local = threading.local()
+
+
+def _get_thread_random() -> random.Random:
+    """
+    获取线程局部的随机数生成器
+    每个线程拥有独立的 Random 实例，避免多线程竞争
+    """
+    if not hasattr(_thread_local, 'rng'):
+        _thread_local.rng = random.Random()
+    return _thread_local.rng
 
 # 导入工具函数
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -65,6 +80,8 @@ class DataGenerator:
         self.max_tokens = max_tokens
         self.timeout = timeout
         
+        # 使用锁保护统计数据，确保多线程安全
+        self._stats_lock = Lock()
         self.stats = {
             'samples_read': 0,
             'data_generated': 0,
@@ -126,7 +143,8 @@ class DataGenerator:
                             response.startswith("Rate Limit Error") or
                             response.startswith("代理调用失败")):
                 print(f"API调用失败: {response}")
-                self.stats['api_errors'] += 1
+                with self._stats_lock:
+                    self.stats['api_errors'] += 1
                 return None
             
             return response.strip() if response else None
@@ -134,7 +152,8 @@ class DataGenerator:
         except Exception as e:
             print(f"API调用异常: {type(e).__name__}: {str(e)}")
             print(f"详细堆栈: {traceback.format_exc()}")
-            self.stats['api_errors'] += 1
+            with self._stats_lock:
+                self.stats['api_errors'] += 1
             return None
     
     def parse_generated_data(self, response: str, batch_idx: int = None, thread_idx: int = None, is_main_batch: bool = False, is_main_thread: bool = False) -> List[Dict[str, Any]]:
@@ -230,32 +249,34 @@ class DataGenerator:
         try:
             # 构建生成提示
             if self.task_type == "calculation":
+                # 使用线程局部随机数生成器
+                thread_rng = _get_thread_random()
                 if self.directions == "验证码":
                     # 随机生成4位或6位数字验证码
-                    length = random.choice([4, 6])
-                    verification_code = ''.join(str(random.randint(0, 9)) for _ in range(length))
+                    length = thread_rng.choice([4, 6])
+                    verification_code = ''.join(str(thread_rng.randint(0, 9)) for _ in range(length))
                     result = [f"随机生成的{length}位验证码：{verification_code}"]
                 elif self.directions == "手机号码":
                     # 随机生成11位中国大陆手机号（首位固定为1，第二位常见为3/4/5/7/8）
                     first = '1'
-                    second = random.choice(['3', '4', '5', '7', '8'])
-                    rest = ''.join(str(random.randint(0, 9)) for _ in range(9))
+                    second = thread_rng.choice(['3', '4', '5', '7', '8'])
+                    rest = ''.join(str(thread_rng.randint(0, 9)) for _ in range(9))
                     phone_number = first + second + rest
                     result = [f"随机生成的11位手机号码：{phone_number}"]
                 elif self.directions == "身份证号码":
                     # 随机生成18位身份证号（前6位地址码简化处理，第7-14位生日随机，最后1位可能为X）
-                    address_code = ''.join(str(random.randint(0, 9)) for _ in range(6))  # 简化地址码
-                    year = str(random.randint(1950, 2005))  # 随机年份
-                    month = f"{random.randint(1, 12):02d}"  # 月份补0
-                    day = f"{random.randint(1, 28):02d}"  # 日期简化处理（1-28）
+                    address_code = ''.join(str(thread_rng.randint(0, 9)) for _ in range(6))  # 简化地址码
+                    year = str(thread_rng.randint(1950, 2005))  # 随机年份
+                    month = f"{thread_rng.randint(1, 12):02d}"  # 月份补0
+                    day = f"{thread_rng.randint(1, 28):02d}"  # 日期简化处理（1-28）
                     birth_code = year + month + day
-                    seq_code = ''.join(str(random.randint(0, 9)) for _ in range(3))  # 顺序码
-                    last_code = random.choice([str(i) for i in range(10)] + ['X'])  # 校验码（可能为X）
+                    seq_code = ''.join(str(thread_rng.randint(0, 9)) for _ in range(3))  # 顺序码
+                    last_code = thread_rng.choice([str(i) for i in range(10)] + ['X'])  # 校验码（可能为X）
                     id_card = address_code + birth_code + seq_code + last_code
                     result = [f"随机生成的18位身份证号码：{id_card}"]
                 else:
-                    num_length = random.randint(4, 35)
-                    num_str = str(random.randint(1000, 10**num_length))
+                    num_length = thread_rng.randint(4, 35)
+                    num_str = str(thread_rng.randint(1000, 10**num_length))
                     result = [f"随机生成的长度为{num_length}的数字{num_str}"]
             else:
                 result = self.directions
@@ -269,7 +290,8 @@ class DataGenerator:
             
             # 解析生成的数据
             generated_list = self.parse_generated_data(response, batch_idx, thread_idx, is_main_batch, is_main_thread)
-            self.stats['data_generated'] += len(generated_list)
+            with self._stats_lock:
+                self.stats['data_generated'] += len(generated_list)
             return generated_list
             
         except Exception as e:
@@ -331,7 +353,8 @@ class DataGenerator:
                             model_score = 0
                         if model_score is None:
                             model_score = 0
-            self.stats['data_evaluated'] += 1
+            with self._stats_lock:
+                self.stats['data_evaluated'] += 1
             return model_score, rule_score
             
         except Exception as e:
@@ -385,7 +408,8 @@ class DataGenerator:
                 
                 if not generated_list:
                     if retry_count < self.sample_retry_times - 1:
-                        self.stats['sample_retries'] += 1
+                        with self._stats_lock:
+                            self.stats['sample_retries'] += 1
                         continue
                     else:
                         return []
@@ -419,9 +443,11 @@ class DataGenerator:
                         complete_data['meta']['retry_count'] = retry_count  # 记录重试次数
                         
                         qualified_data.append(complete_data)
-                        self.stats['data_passed'] += 1
+                        with self._stats_lock:
+                            self.stats['data_passed'] += 1
                     else:
-                        self.stats['data_failed'] += 1
+                        with self._stats_lock:
+                            self.stats['data_failed'] += 1
                 
                 # 如果有合格数据，直接返回
                 if qualified_data:
@@ -429,7 +455,8 @@ class DataGenerator:
                 
                 # 如果没有合格数据且还可以重试
                 if retry_count < self.sample_retry_times - 1:
-                    self.stats['sample_retries'] += 1
+                    with self._stats_lock:
+                        self.stats['sample_retries'] += 1
                     continue
                 else:
                     return []
@@ -437,7 +464,8 @@ class DataGenerator:
             except Exception as e:
                 if retry_count < self.sample_retry_times - 1:
                     print(f"❌ 处理样本时出错: {str(e)}，重试中...")
-                    self.stats['sample_retries'] += 1
+                    with self._stats_lock:
+                        self.stats['sample_retries'] += 1
                     continue
                 else:
                     print(f"❌ 重试{self.sample_retry_times}次后仍然出错: {str(e)}")
