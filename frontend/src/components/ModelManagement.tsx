@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { adminService } from '../services/api';
 import type { ModelConfig } from '../types';
+import ConfirmDialog from './ConfirmDialog';
 
 export default function ModelManagement() {
   const [models, setModels] = useState<ModelConfig[]>([]);
@@ -9,6 +10,12 @@ export default function ModelManagement() {
   const [success, setSuccess] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingModel, setEditingModel] = useState<ModelConfig | null>(null);
+  
+  // 确认弹窗状态
+  const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; model: ModelConfig | null }>({
+    isOpen: false,
+    model: null,
+  });
   
   const [formData, setFormData] = useState({
     name: '',
@@ -103,8 +110,15 @@ export default function ModelManagement() {
   };
 
   const handleDelete = async (model: ModelConfig) => {
-    if (!confirm(`确定要删除模型 "${model.name}" 吗？`)) return;
+    setDeleteConfirm({ isOpen: true, model });
+  };
 
+  const confirmDelete = async () => {
+    const { model } = deleteConfirm;
+    if (!model) return;
+    
+    setDeleteConfirm({ isOpen: false, model: null });
+    
     try {
       setLoading(true);
       await adminService.deleteModel(model.id);
@@ -423,6 +437,18 @@ export default function ModelManagement() {
           </div>
         </div>
       )}
+
+      {/* 删除模型确认弹窗 */}
+      <ConfirmDialog
+        isOpen={deleteConfirm.isOpen}
+        title="删除模型"
+        message={`确定要删除模型 "${deleteConfirm.model?.name}" 吗？`}
+        type="danger"
+        confirmText="删除"
+        cancelText="取消"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ isOpen: false, model: null })}
+      />
     </div>
   );
 }

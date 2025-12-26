@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { adminService } from '../services/api';
 import type { AdminUser, Report } from '../types';
+import ConfirmDialog from './ConfirmDialog';
 
 export default function UserManagement() {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -12,6 +13,12 @@ export default function UserManagement() {
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [userReports, setUserReports] = useState<Report[]>([]);
   const [loadingReports, setLoadingReports] = useState(false);
+  
+  // 确认弹窗状态
+  const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; user: AdminUser | null }>({
+    isOpen: false,
+    user: null,
+  });
 
   useEffect(() => {
     loadUsers();
@@ -30,10 +37,15 @@ export default function UserManagement() {
   };
 
   const handleDelete = async (user: AdminUser) => {
-    if (!confirm(`确定要删除用户 "${user.username}" 及其所有关联数据吗？此操作不可恢复！`)) {
-      return;
-    }
+    setDeleteConfirm({ isOpen: true, user });
+  };
 
+  const confirmDelete = async () => {
+    const { user } = deleteConfirm;
+    if (!user) return;
+    
+    setDeleteConfirm({ isOpen: false, user: null });
+    
     try {
       setLoading(true);
       setError('');
@@ -414,6 +426,18 @@ export default function UserManagement() {
           </div>
         </div>
       </div>
+
+      {/* 删除用户确认弹窗 */}
+      <ConfirmDialog
+        isOpen={deleteConfirm.isOpen}
+        title="删除用户"
+        message={`确定要删除用户 "${deleteConfirm.user?.username}" 及其所有关联数据吗？此操作不可恢复！`}
+        type="danger"
+        confirmText="删除"
+        cancelText="取消"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ isOpen: false, user: null })}
+      />
     </div>
   );
 }

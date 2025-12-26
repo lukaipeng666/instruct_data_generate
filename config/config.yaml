@@ -4,6 +4,9 @@
 web_service:
   host: "0.0.0.0"
   port: 5000
+  # 生产模式：禁用 API 文档（/docs, /redoc, /openapi.json）
+  # 开发时设为 false，部署时设为 true
+  production_mode: true
 
 # 前端配置
 frontend:
@@ -24,7 +27,7 @@ cors:
 jwt:
   # 密钥（生产环境请修改为随机字符串）
   # 留空则自动生成随机密钥（每次重启会变化）
-  secret_key: "HOfH8KkJ7Ei45XhTEJ48xhDIfgDwCWoKEuGK4XfxV_RfSTsd0VctL52oYgX3nw3MNQqxM44KmKwu9z1EXp2jAA"
+  secret_key: "5K2UTSU7eIztM-qyayws7F47Nd48AfuXYqRPpRnUdu6rQiydUbV7dvrMhMhSXWMt6_hq6rjOIRaW1VJp81dlNQ"
   # 加密算法
   algorithm: "HS256"
   # Token 过期时间（分钟），默认30天
