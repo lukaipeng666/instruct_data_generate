@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { dataService } from '../services/api';
 import type { DataFile } from '../types';
 
 export default function DataManagement() {
+  const navigate = useNavigate();
   const [files, setFiles] = useState<DataFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -282,6 +284,12 @@ export default function DataManagement() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => navigate(`/data-editor/${file.id}`)}
+                          className="text-purple-600 hover:text-purple-900"
+                        >
+                          编辑
+                        </button>
                         <button
                           onClick={() => handleViewContent(file)}
                           className="text-blue-600 hover:text-blue-900"

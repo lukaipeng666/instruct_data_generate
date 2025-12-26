@@ -1,15 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { reportService } from '../services/api';
-import type { GeneratedDataItem } from '../types';
+import { dataService } from '../services/api';
 
 // 可编辑数据项的类型
 interface EditableDataItem {
-  id: number;
-  data: GeneratedDataItem;
-  is_confirmed: boolean;
-  created_at: string | null;
-  updated_at: string | null;
+  index: number;
+  data: any;
   isEdited?: boolean;  // 本地编辑状态
 }
 
@@ -76,8 +72,8 @@ function TurnEditor({
   );
 }
 
-export default function DataEditorPage() {
-  const { taskId } = useParams<{ taskId: string }>();
+export default function DataFileEditorPage() {
+  const { fileId } = useParams<{ fileId: string }>();
   const navigate = useNavigate();
   
   const [dataItems, setDataItems] = useState<EditableDataItem[]>([]);
@@ -86,6 +82,7 @@ export default function DataEditorPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [filename, setFilename] = useState('');
   
   // 批量删除相关状态
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
@@ -106,21 +103,22 @@ export default function DataEditorPage() {
   
   // 加载数据
   const loadData = useCallback(async () => {
-    if (!taskId) return;
+    if (!fileId) return;
     
     try {
       setLoading(true);
       setError('');
-      const data = await reportService.getReportDataEditable(decodeURIComponent(taskId));
-      setDataItems(data.map(item => ({ ...item, isEdited: false })));
+      const data = await dataService.getDataFileContentEditable(parseInt(fileId));
+      setFilename(data.filename);
+      setDataItems(data.items.map(item => ({ ...item, isEdited: false })));
       setSelectedItems(new Set());  // 清空选中
       setSelectedIndex(0);  // 重置选中索引
     } catch (err: any) {
-      setError(err.message || '加载数据失败');
+      setError(err.response?.data?.detail || err.message || '加载数据失败');
     } finally {
       setLoading(false);
     }
-  }, [taskId]);
+  }, [fileId]);
 
   useEffect(() => {
     loadData();
@@ -195,7 +193,7 @@ export default function DataEditorPage() {
 
   // 保存修改
   const handleSave = async () => {
-    if (!currentItem) return;
+    if (!currentItem || !fileId) return;
     
     // 验证 Human 和 Assistant 数量是否一致
     const validation = validateTurnsBalance(currentItem.data.turns || []);
@@ -207,7 +205,7 @@ export default function DataEditorPage() {
     try {
       setSaving(true);
       setError('');
-      await reportService.updateGeneratedData(currentItem.id, currentItem.data);
+      await dataService.updateDataFileItem(parseInt(fileId), currentItem.index, currentItem.data);
       
       // 更新本地状态
       setDataItems(prev => prev.map((item, idx) => {
@@ -219,40 +217,7 @@ export default function DataEditorPage() {
       
       setSuccess('保存成功');
     } catch (err: any) {
-      setError(err.message || '保存失败');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // 确认可用
-  const handleConfirm = async () => {
-    if (!currentItem) return;
-    
-    try {
-      setSaving(true);
-      setError('');
-      
-      // 如果有编辑，先保存
-      if (currentItem.isEdited) {
-        await reportService.updateGeneratedData(currentItem.id, currentItem.data);
-      }
-      
-      // 切换确认状态
-      const newConfirmState = !currentItem.is_confirmed;
-      await reportService.confirmGeneratedData(currentItem.id, newConfirmState);
-      
-      // 更新本地状态
-      setDataItems(prev => prev.map((item, idx) => {
-        if (idx === selectedIndex) {
-          return { ...item, is_confirmed: newConfirmState, isEdited: false };
-        }
-        return item;
-      }));
-      
-      setSuccess(newConfirmState ? '已确认可用' : '已取消确认');
-    } catch (err: any) {
-      setError(err.message || '操作失败');
+      setError(err.response?.data?.detail || err.message || '保存失败');
     } finally {
       setSaving(false);
     }
@@ -301,20 +266,20 @@ export default function DataEditorPage() {
 
   // 批量删除选中的数据
   const handleBatchDelete = async (indicesToDelete: number[]) => {
-    if (indicesToDelete.length === 0) return;
+    if (!fileId || indicesToDelete.length === 0) return;
     
     if (indicesToDelete.length >= dataItems.length) {
-      setError('不能删除所有数据，至少需要保留一条数据');
+      setError('不能删除所有数据，文件至少需要保留一条数据');
       return;
     }
     
-    // 获取要删除的数据 ID
-    const dataIdsToDelete = indicesToDelete.map(i => dataItems[i].id);
+    // 转换为原始索引
+    const originalIndices = indicesToDelete.map(i => dataItems[i].index);
     
     try {
       setDeleting(true);
       setError('');
-      const result = await reportService.batchDeleteGeneratedData(dataIdsToDelete);
+      const result = await dataService.batchDeleteDataFileItems(parseInt(fileId), originalIndices);
       setSuccess(`成功删除 ${result.deleted_count} 条数据`);
       setSelectedItems(new Set());
       setRangeStart('');
@@ -374,7 +339,7 @@ export default function DataEditorPage() {
 
   // 添加新数据
   const handleAddNewItem = async () => {
-    if (!taskId) return;
+    if (!fileId) return;
     
     // 验证 Human 和 Assistant 数量是否一致
     const validation = validateTurnsBalance(newItemData.turns);
@@ -386,7 +351,7 @@ export default function DataEditorPage() {
     try {
       setAdding(true);
       setError('');
-      await reportService.addGeneratedData(decodeURIComponent(taskId), newItemData);
+      await dataService.addDataFileItem(parseInt(fileId), newItemData);
       setSuccess('数据添加成功');
       setShowAddModal(false);
       // 重置表单
@@ -466,11 +431,11 @@ export default function DataEditorPage() {
               返回
             </button>
             <h1 className="text-xl font-semibold text-gray-900">
-              数据编辑器
+              数据文件编辑器
             </h1>
           </div>
           <div className="text-sm text-gray-500">
-            任务: {taskId ? decodeURIComponent(taskId) : '-'}
+            文件: {filename || '-'}
           </div>
         </div>
       </header>
@@ -506,10 +471,9 @@ export default function DataEditorPage() {
             <h2 className="text-sm font-medium text-gray-700">
               数据列表 ({dataItems.length} 条)
             </h2>
-            <p className="text-xs text-gray-500 mt-1">
-              已确认: {dataItems.filter(d => d.is_confirmed).length} 条
-              {selectedItems.size > 0 && <span className="text-blue-600 ml-2">已选中 {selectedItems.size} 条</span>}
-            </p>
+            {selectedItems.size > 0 && (
+              <p className="text-xs text-blue-600 mt-1">已选中 {selectedItems.size} 条</p>
+            )}
           </div>
           
           {/* 批量删除控件 */}
@@ -574,7 +538,7 @@ export default function DataEditorPage() {
           <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
             {dataItems.map((item, index) => (
               <div
-                key={item.id}
+                key={item.index}
                 className={`flex items-center transition-colors ${
                   index === selectedIndex
                     ? 'bg-blue-50 border-l-4 border-l-blue-600'
@@ -605,13 +569,10 @@ export default function DataEditorPage() {
                           已编辑
                         </span>
                       )}
-                      {item.is_confirmed && (
-                        <span className="w-3 h-3 bg-green-500 rounded-full" title="已确认" />
-                      )}
                     </div>
                   </div>
                   <p className="text-xs text-gray-500 mt-1 truncate">
-                    {item.data.turns?.[0]?.text?.slice(0, 25) || '无内容'}...
+                    {item.data.turns?.[0]?.text?.slice(0, 25) || item.data.meta?.meta_description?.slice(0, 25) || '无内容'}...
                   </p>
                 </button>
               </div>
@@ -780,36 +741,29 @@ export default function DataEditorPage() {
                     )}
                   </div>
                 ))}
+
+                {(!currentItem.data.turns || currentItem.data.turns.length === 0) && (
+                  <div className="text-center py-8 text-gray-500">
+                    <p>暂无对话轮次</p>
+                    <button
+                      onClick={handleAddTurn}
+                      className="mt-2 text-blue-600 hover:text-blue-700"
+                    >
+                      点击添加
+                    </button>
+                  </div>
+                )}
               </div>
 
-              {/* 其他 Meta 信息 */}
+              {/* 原始数据预览 */}
               <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
                 <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center gap-2">
-                  <span>ℹ️</span>
-                  其他信息
+                  <span>📄</span>
+                  原始数据预览
                 </h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-500">模型评分:</span>
-                    <span className="ml-2 text-gray-900">{currentItem.data.meta?.model_score ?? '-'}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">规则评分:</span>
-                    <span className="ml-2 text-gray-900">{currentItem.data.meta?.rule_score ?? '-'}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">生成模型:</span>
-                    <span className="ml-2 text-gray-900">{currentItem.data.meta?.generation_model || '-'}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">生成时间:</span>
-                    <span className="ml-2 text-gray-900">
-                      {currentItem.data.meta?.generation_time 
-                        ? new Date(currentItem.data.meta.generation_time).toLocaleString('zh-CN')
-                        : '-'}
-                    </span>
-                  </div>
-                </div>
+                <pre className="text-sm text-gray-800 whitespace-pre-wrap break-words overflow-auto max-h-60 bg-gray-50 p-4 rounded-lg border">
+                  {JSON.stringify(currentItem.data, null, 2)}
+                </pre>
               </div>
             </div>
           ) : (
@@ -852,11 +806,6 @@ export default function DataEditorPage() {
                   未保存的修改
                 </span>
               )}
-              {currentItem.is_confirmed && (
-                <span className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded-full">
-                  ✓ 已确认可用
-                </span>
-              )}
             </div>
 
             {/* 操作按钮 */}
@@ -867,17 +816,6 @@ export default function DataEditorPage() {
                 className="px-6 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {saving ? '保存中...' : '保存修改'}
-              </button>
-              <button
-                onClick={handleConfirm}
-                disabled={saving}
-                className={`px-6 py-2 text-sm rounded-lg transition-colors ${
-                  currentItem.is_confirmed
-                    ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    : 'bg-green-600 text-white hover:bg-green-700'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                {saving ? '处理中...' : (currentItem.is_confirmed ? '取消确认' : '确认可用')}
               </button>
             </div>
           </div>

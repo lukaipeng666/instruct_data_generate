@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import DataEditorPage from './pages/DataEditorPage';
+import DataFileEditorPage from './pages/DataFileEditorPage';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated());
@@ -29,6 +30,14 @@ function App() {
         element={
           <PrivateRoute>
             <DataEditorPage />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/data-editor/:fileId"
+        element={
+          <PrivateRoute>
+            <DataFileEditorPage />
           </PrivateRoute>
         }
       />
