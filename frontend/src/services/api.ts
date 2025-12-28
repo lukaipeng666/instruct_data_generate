@@ -29,10 +29,16 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // 只在非登录/注册接口的401错误时才重定向到登录页
+    // 登录/注册失败也会返回401，但不应该触发重定向
     if (error.response?.status === 401) {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('username');
-      window.location.href = '/login';
+      const requestUrl = error.config?.url || '';
+      // 如果不是登录或注册接口，才执行重定向
+      if (!requestUrl.includes('/login') && !requestUrl.includes('/register')) {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('username');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }

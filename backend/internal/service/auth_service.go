@@ -28,7 +28,7 @@ func NewAuthService(userRepo *repository.UserRepository, jwtManager *utils.JWTMa
 }
 
 // Register 用户注册
-func (s *AuthService) Register(req *dto.RegisterRequest) (*models.User, error) {
+func (s *AuthService) Register(req *dto.RegisterRequest) (*dto.LoginResponse, error) {
 	// 验证用户名是否已存在
 	exists, err := s.userRepo.ExistsByUsername(req.Username)
 	if err != nil {
@@ -56,7 +56,22 @@ func (s *AuthService) Register(req *dto.RegisterRequest) (*models.User, error) {
 		return nil, fmt.Errorf("创建用户失败: %w", err)
 	}
 
-	return user, nil
+	// 生成Token
+	token, err := s.jwtManager.GenerateToken(user.ID, user.Username, user.IsAdmin)
+	if err != nil {
+		return nil, fmt.Errorf("生成Token失败: %w", err)
+	}
+
+	return &dto.LoginResponse{
+		AccessToken: token,
+		TokenType:   "bearer",
+		User: dto.UserInfo{
+			ID:       user.ID,
+			Username: user.Username,
+			IsActive: user.IsActive,
+			IsAdmin:  user.IsAdmin,
+		},
+	}, nil
 }
 
 // Login 用户登录

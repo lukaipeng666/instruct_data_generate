@@ -27,7 +27,7 @@ func NewAuthHandler(authService *service.AuthService) *AuthHandler {
 // @Accept json
 // @Produce json
 // @Param request body dto.RegisterRequest true "注册信息"
-// @Success 200 {object} utils.Response{data=dto.UserInfo}
+// @Success 200 {object} utils.Response{data=dto.LoginResponse}
 // @Router /api/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req dto.RegisterRequest
@@ -36,18 +36,13 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, err := h.authService.Register(&req)
+	resp, err := h.authService.Register(&req)
 	if err != nil {
 		utils.BadRequest(c, err.Error())
 		return
 	}
 
-	utils.SuccessWithMessage(c, "注册成功", dto.UserInfo{
-		ID:       user.ID,
-		Username: user.Username,
-		IsActive: user.IsActive,
-		IsAdmin:  user.IsAdmin,
-	})
+	utils.SuccessWithMessage(c, "注册成功", resp)
 }
 
 // Login 用户登录

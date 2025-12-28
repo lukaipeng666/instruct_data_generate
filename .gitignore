@@ -32,9 +32,43 @@ bin/
 backend/server
 gen-api
 *.exe
+backend/main
 
 # Redis
 dump.rdb
 
-# Database files (keep tracked ones, ignore new)
+# Database files
+*.db
 *.db-journal
+*.db-shm
+*.db-wal
+database/*.db
+backend/database/*.db
+
+# Claude Code
+.claude/
+
+# Config files (if they contain sensitive data)
+backend/config/*.yaml
+backend/config/*.yml
+backend/config/*.env
+!backend/config/*.example
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+
+# Test coverage
+*.out
+coverage.html
+coverage.txt
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*~

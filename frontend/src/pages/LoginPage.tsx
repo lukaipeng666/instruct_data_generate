@@ -2,6 +2,7 @@ import { useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import AlertModal from '../components/AlertModal';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -12,6 +13,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [alertModal, setAlertModal] = useState({ isOpen: false, title: '', message: '', type: 'error' as 'error' | 'success' | 'warning' | 'info' });
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -22,17 +24,32 @@ export default function LoginPage() {
       if (isRegisterMode) {
         // 注册模式
         if (password !== confirmPassword) {
-          setError('两次输入的密码不一致');
+          setAlertModal({
+            isOpen: true,
+            title: '注册失败',
+            message: '两次输入的密码不一致',
+            type: 'error'
+          });
           setLoading(false);
           return;
         }
         if (password.length < 6) {
-          setError('密码长度至少为6个字符');
+          setAlertModal({
+            isOpen: true,
+            title: '注册失败',
+            message: '密码长度至少为6个字符',
+            type: 'error'
+          });
           setLoading(false);
           return;
         }
         if (username.length < 3 || username.length > 20) {
-          setError('用户名长度必须在3-20个字符之间');
+          setAlertModal({
+            isOpen: true,
+            title: '注册失败',
+            message: '用户名长度必须在3-20个字符之间',
+            type: 'error'
+          });
           setLoading(false);
           return;
         }
@@ -47,8 +64,12 @@ export default function LoginPage() {
       }
     } catch (err: any) {
       const errorMsg = err.response?.data?.detail || (isRegisterMode ? '注册失败，请重试' : '登录失败，请检查用户名和密码');
-      setError(errorMsg);
-    } finally {
+      setAlertModal({
+        isOpen: true,
+        title: isRegisterMode ? '注册失败' : '登录失败',
+        message: errorMsg,
+        type: 'error'
+      });
       setLoading(false);
     }
   };
@@ -82,11 +103,7 @@ export default function LoginPage() {
           <p className="text-gray-500">{isRegisterMode ? '创建新账号' : '请登录以继续'}</p>
         </div>
 
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm animate-shake">
-            {error}
-          </div>
-        )}
+
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
@@ -199,6 +216,15 @@ export default function LoginPage() {
           <p>© 2025 数据生成任务管理系统</p>
         </div>
       </div>
+      {alertModal.isOpen && (
+        <AlertModal
+          isOpen={alertModal.isOpen}
+          title={alertModal.title}
+          message={alertModal.message}
+          type={alertModal.type}
+          onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+        />
+      )}
     </div>
   );
 }
