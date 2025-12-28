@@ -112,14 +112,14 @@ fi
 
 # 编译 Go 程序
 echo "编译 Go 后端..."
-if ! go build -o server ./cmd/server/main.go 2>&1; then
+if ! go build -C backend -o server ./cmd/server/main.go 2>&1; then
     echo "❌ Go 编译失败"
     exit 1
 fi
 
 # 启动 Go 后端
 echo "启动 Go 后端服务..."
-nohup ./server > log/go_backend.log 2>&1 &
+nohup ./backend/server > log/go_backend.log 2>&1 &
 GO_PID=$!
 echo $GO_PID > log/go_backend.pid
 sleep 2

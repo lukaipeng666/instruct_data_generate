@@ -26,3 +26,15 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Go build artifacts
+bin/
+backend/server
+gen-api
+*.exe
+
+# Redis
+dump.rdb
+
+# Database files (keep tracked ones, ignore new)
+*.db-journal

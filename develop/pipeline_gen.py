@@ -145,7 +145,6 @@ class PipelineDataGenerator:
             ...其他参数...
         """
         
-        print(f"🚀 服务 {service_idx + 1} 开始生成数据: {api_base} (样本数: {len(samples)})")
         start_time = time.time()
 
         try:
@@ -179,7 +178,6 @@ class PipelineDataGenerator:
             # 检查结果
             if result.get("status") == "Success":
                 output_count = result.get('output_count', 0)
-                print(f"✅ 服务 {service_idx + 1} 完成! 耗时: {duration:.1f}秒, 生成数据: {output_count}条")
                 
                 return {
                     'service_idx': service_idx,
@@ -194,7 +192,6 @@ class PipelineDataGenerator:
                 }
             else:
                 error_msg = result.get('error', 'unknown error')
-                print(f"❌ 服务 {service_idx + 1} 处理失败: {error_msg}")
                 return {
                     'service_idx': service_idx, 
                     'api_base': api_base,
@@ -205,7 +202,6 @@ class PipelineDataGenerator:
                 }
                 
         except Exception as e:
-            print(f"❌ 服务 {service_idx + 1} 异常: {e}")
             return {
                 'service_idx': service_idx, 
                 'api_base': api_base,
@@ -240,24 +236,12 @@ class PipelineDataGenerator:
             包含任务状态、生成数量等信息的字典
         """
         
-        print("🚀 开始分布式数据生成")
-        print(f"使用 {self.service_count} 个服务:")
-        for i, service in enumerate(self.services):
-            print(f"  服务 {i+1}: {service}")
-        print(f"数据使用轮次: {data_rounds} 轮")
-        
         total_start_time = time.time()
         
         # 1. 从数据库读取输入数据（一次性读入内存）
-        print(f"\n📂 从数据库读取数据 (file_id={file_id}, user_id={user_id})")
         samples, read_errors = FileReader.read_samples(file_id=file_id, user_id=user_id)
         
-        if read_errors:
-            print(f"⚠️ 读取时有 {len(read_errors)} 个错误")
-        print(f"✅ 读取完成: {len(samples)} 个样本")
-        
         if not samples:
-            print("❌ 没有有效样本，退出")
             return {
                 'status': 'Failed',
                 'error': 'No valid samples',
@@ -281,7 +265,6 @@ class PipelineDataGenerator:
         
         # 3. 多轮数据处理
         for round_num in range(data_rounds):
-            print(f"\n🔄 第 {round_num + 1}/{data_rounds} 轮数据生成")
             
             # 更新 Redis 进度：当前轮次开始
             self.update_task_progress(task_id, {
@@ -300,12 +283,10 @@ class PipelineDataGenerator:
             sample_parts = self.split_samples_in_memory(samples)
             
             # 3.2 创建并行任务
-            print(f"⚡ 并行生成 ({self.service_count} 个服务)")
             tasks = []
             
             for i, (service, sample_part) in enumerate(zip(self.services, sample_parts)):
                 if not sample_part:
-                    print(f"  服务 {i+1}: 没有分配到样本，跳过")
                     continue
                 
                 task = self.process_single_service(
@@ -337,7 +318,6 @@ class PipelineDataGenerator:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
             # 3.4 统计本轮结果
-            print("📈 本轮结果统计")
             round_output_count = 0
             round_errors = 0
             
@@ -348,7 +328,6 @@ class PipelineDataGenerator:
                     else:
                         round_errors += 1
                 elif isinstance(result, Exception):
-                    print(f"❌ 任务异常: {result}")
                     round_errors += 1
             
             total_generated_count += round_output_count
@@ -369,8 +348,6 @@ class PipelineDataGenerator:
                 'round_errors': round_errors,
                 'completion_percent': round(round_completion, 2)  # 完成百分比
             })
-            
-            print(f"第 {round_num + 1} 轮完成: 生成 {round_output_count} 条数据")
         
         # 4. 计算总耗时
         total_duration = time.time() - total_start_time
@@ -392,10 +369,6 @@ class PipelineDataGenerator:
             'services': self.service_count,
             'completion_percent': completion_percent  # 完成百分比
         })
-        
-        print(f"\n🏆 多轮数据生成任务完成!")
-        print(f"  总耗时: {total_duration:.1f}秒")
-        print(f"  总生成数据: {total_generated_count} 条")
         
         return {
             'status': 'Success',
