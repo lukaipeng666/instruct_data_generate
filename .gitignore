@@ -49,10 +49,15 @@ backend/database/*.db
 .claude/
 
 # Config files (if they contain sensitive data)
-backend/config/*.yaml
-backend/config/*.yml
-backend/config/*.env
-!backend/config/*.example
+*.yaml
+*.yml
+*.env
+!*.example.yaml
+!*.example.yml
+!config/*.example.yaml
+!config/*.example.yml
+!backend/config/*.example.yaml
+!backend/config/*.example.yml
 
 # Build artifacts
 *.o

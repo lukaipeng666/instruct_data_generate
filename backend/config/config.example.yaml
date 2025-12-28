@@ -1,7 +1,8 @@
-# 服务配置文件
+# 服务配置文件示例
+# 复制此文件为 config.yaml 并填入实际配置
 
 # 项目根目录（用于执行 Python 脚本）
-project_root: "/Users/lukaipeng2/Desktop/GEN_GO_PYTHON/gen_go"
+project_root: "/path/to/your/project"
 
 # Web 服务配置
 web_service:
@@ -17,7 +18,7 @@ frontend:
 
 # CORS 配置（跨域访问）
 cors:
-  # 允许的跨域源列表
+  # 允许的跨域源列表 - 生产环境请修改为实际域名
   origins:
     - "http://localhost:3000"
   allow_credentials: true
@@ -28,9 +29,10 @@ cors:
 
 # JWT 认证配置
 jwt:
-  # 密钥（生产环境请修改为随机字符串）
-  # 留空则自动生成随机密钥（每次重启会变化）
-  secret_key: "5K2UTSU7eIztM-qyayws7F47Nd48AfuXYqRPpRnUdu6rQiydUbV7dvrMhMhSXWMt6_hq6rjOIRaW1VJp81dlNQ"
+  # 密钥（生产环境必须修改为随机字符串！）
+  # 生成方式: openssl rand -base64 32
+  # 留空则自动生成随机密钥（每次重启会变化，会导致所有用户需要重新登录）
+  secret_key: ""
   # 加密算法
   algorithm: "HS256"
   # Token 过期时间（分钟），默认30天
@@ -41,9 +43,8 @@ admin:
   # 默认管理员用户名
   username: "admin"
   # 默认管理员密码哈希值（使用 bcrypt 加密）
-  # 如需修改密码，请使用 bcrypt 生成新的哈希值替换此处
   # 生成方式: python3 -c "import bcrypt; print(bcrypt.hashpw('你的密码'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'))"
-  password: "$2b$12$PAofQYRSUA3d9axVq/gVIOs6UTjalXW9Q0Rrm4xgoLG8JEa8rs3lO"
+  password: ""
 
 # Redis 服务配置（用于模型调用限流和任务进度）
 redis_service:
@@ -58,17 +59,10 @@ redis_service:
 
 # 默认模型服务配置
 model_services:
-  # 默认 API 服务地址列表
+  # 默认 API 服务地址列表 - 修改为你的实际模型服务地址
   default_services:
     - "http://localhost:6466/v1"
-    - "http://localhost:6467/v1"
-    - "http://localhost:6468/v1"
-    - "http://localhost:6469/v1"
-    - "http://localhost:6470/v1"
-    - "http://localhost:6471/v1"
-    - "http://localhost:6472/v1"
-    - "http://localhost:6473/v1"
   # 默认模型路径
   default_model: "/data/models/Qwen3-32B"
-  # 默认 API Key
+  # 默认 API Key - 如果需要的话
   default_api_key: ""
