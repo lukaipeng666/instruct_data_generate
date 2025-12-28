@@ -17,20 +17,22 @@ func InitDB(cfg *config.Config) error {
 
 	// 配置GORM
 	DB, err = gorm.Open(sqlite.Open(cfg.Database.Path), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent), // 使用静默模式
+		Logger:                                   logger.Default.LogMode(logger.Silent), // 使用静默模式
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	if err != nil {
 		return err
 	}
 
-	// 不进行自动迁移,直接使用现有数据库表结构
-	// AutoMigrate() // 注释掉自动迁移
+	// 自动迁移数据库表结构
+	if err := AutoMigrate(); err != nil {
+		return err
+	}
 
 	return nil
 }
 
-// AutoMigrate 自动迁移数据库表(仅在新数据库时使用)
+// AutoMigrate 自动迁移数据库表
 func AutoMigrate() error {
 	return DB.AutoMigrate(
 		&User{},
