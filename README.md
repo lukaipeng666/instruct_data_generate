@@ -65,84 +65,45 @@ cd frontend && npm install && cd ..
 
 ### 配置
 
-编辑 `config/config.yaml`：
+1. 复制示例配置文件：
+
+```bash
+cp backend/config/config.example.yaml backend/config/config.yaml
+```
+
+2. 生成 JWT 密钥（生产环境必须使用强密钥）：
+
+```bash
+openssl rand -base64 32
+```
+
+3. 生成管理员密码哈希：
+
+```bash
+python3 -c "import bcrypt; print(bcrypt.hashpw('你的密码'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'))"
+```
+
+4. 编辑 `backend/config/config.yaml`，填入生成的值：
 
 ```yaml
-# 服务配置文件
-
-# 项目根目录（用于执行 Python 脚本）
-project_root: "/Users/lukaipeng2/Desktop/GEN_GO_PYTHON/gen_go"
-
-# Web 服务配置
-web_service:
-  host: "0.0.0.0"
-  port: 8080
-  # 生产模式：禁用 API 文档（/docs, /redoc, /openapi.json）
-  # 开发时设为 false，部署时设为 true
-  production_mode: false
-
-# 前端配置
-frontend:
-  url: "http://localhost:3000"
-
-# CORS 配置（跨域访问）
-cors:
-  # 允许的跨域源列表
-  origins:
-    - "http://localhost:3000"
-  allow_credentials: true
-  allow_methods:
-    - "*"
-  allow_headers:
-    - "*"
+# 项目根目录（修改为实际路径）
+project_root: "/path/to/your/project"
 
 # JWT 认证配置
 jwt:
-  # 密钥（生产环境请修改为随机字符串）
-  # 留空则自动生成随机密钥（每次重启会变化）
-  secret_key: "5K2UTSU7eIztM-qyayws7F47Nd48AfuXYqRPpRnUdu6rQiydUbV7dvrMhMhSXWMt6_hq6rjOIRaW1VJp81dlNQ"
-  # 加密算法
+  secret_key: "生成的JWT密钥"
   algorithm: "HS256"
-  # Token 过期时间（分钟），默认30天
   expire_minutes: 43200
 
 # 管理员配置
 admin:
-  # 默认管理员用户名
   username: "admin"
-  # 默认管理员密码哈希值（使用 bcrypt 加密）
-  # 如需修改密码，请使用 bcrypt 生成新的哈希值替换此处
-  # 生成方式: python3 -c "import bcrypt; print(bcrypt.hashpw('你的密码'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'))"
-  password: "$2b$12$PAofQYRSUA3d9axVq/gVIOs6UTjalXW9Q0Rrm4xgoLG8JEa8rs3lO"
+  password: "生成的密码哈希"
 
-# Redis 服务配置（用于模型调用限流和任务进度）
-redis_service:
-  host: "localhost"
-  port: 6379
-  db: 0
-  password: null
-  # 等待并发槽位的最大时间（秒）
-  max_wait_time: 300
-  # 默认最大并发数（当模型未配置时使用）
-  default_max_concurrency: 16
-
-# 默认模型服务配置
-model_services:
-  # 默认 API 服务地址列表
-  default_services:
-    - "http://localhost:6466/v1"
-    - "http://localhost:6467/v1"
-    - "http://localhost:6468/v1"
-    - "http://localhost:6469/v1"
-    - "http://localhost:6470/v1"
-    - "http://localhost:6471/v1"
-    - "http://localhost:6472/v1"
-    - "http://localhost:6473/v1"
-  # 默认模型路径
-  default_model: "/data/models/Qwen3-32B"
-  # 默认 API Key
-  default_api_key: ""
+# 其他配置项...
 ```
+
+详细配置说明请参考 `backend/config/config.example.yaml`
 
 ### 启动服务
 
@@ -164,8 +125,10 @@ model_services:
 
 ## 默认账户
 
-- 用户名: `admin`
-- 密码: 见 `config/config.yaml` 中的配置
+首次部署后，请使用配置文件中设置的管理员账户登录：
+
+- 用户名: `admin`（可在配置文件中修改）
+- 密码: 在配置时设置的密码
 
 ## 主要功能
 
