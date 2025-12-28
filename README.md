@@ -1,16 +1,24 @@
-# 🚀 数据生成任务管理系统
+<p align="center">
+  <h1>🚀 数据生成任务管理系统</h1>
+</p>
 
-<div align="center">
-
+<p align="center">
 基于 Go + React 的分布式数据生成平台，支持多模型并行调用、任务管理和数据质量评估。
+</p>
+
+<p align="center">
 
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://golang.org/)
 [![React Version](https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react)](https://reactjs.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+</p>
+
+<p align="center">
+
 [功能特性](#-主要功能) • [快速开始](#-快速开始) • [文档](#-文档) • [贡献](#-贡献)
 
-</div>
+</p>
 
 ---
 
@@ -315,10 +323,10 @@ tail -f log/redis.log
 
 ---
 
-<div align="center">
+<p align="center">
 
 **[⬆ 返回顶部](#-数据生成任务管理系统)**
 
 Made with ❤️ by [lukaipeng666](https://github.com/lukaipeng666)
 
-</div>
+</p>
