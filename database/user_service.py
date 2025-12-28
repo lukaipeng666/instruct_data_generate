@@ -3,6 +3,7 @@
 """
 from sqlalchemy.orm import Session
 import bcrypt
+import os
 from .models import User, SessionLocal, init_db, verify_and_create_columns
 from datetime import datetime
 
@@ -141,10 +142,20 @@ def init_database():
     """
     print("\n=== 开始初始化数据库 ===")
     
+    # 检查数据库文件状态
+    db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'database', 'app.db')
+    print(f"📂 数据库路径: {db_path}")
+    print(f"📂 数据库文件存在: {os.path.exists(db_path)}")
+    
     # 1. 创建所有表
     print("\n1. 创建数据库表...")
     init_db()
     print("✅ 表结构创建完成")
+    
+    # 检查创建后的状态
+    print(f"📂 创建表后数据库文件存在: {os.path.exists(db_path)}")
+    if os.path.exists(db_path):
+        print(f"📊 数据库文件大小: {os.path.getsize(db_path)} 字节")
     
     # 2. 核查和创建缺失的字段
     print("\n2. 核查数据库字段...")

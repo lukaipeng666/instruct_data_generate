@@ -18,17 +18,13 @@ export default function DataManagement() {
   const [convertingFiles, setConvertingFiles] = useState<{ [key: string]: number }>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const convertInputRef = useRef<HTMLInputElement>(null);
-  
+
   // 确认弹窗状态
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; fileId: number | null; isBatch: boolean }>({
     isOpen: false,
     fileId: null,
     isBatch: false,
   });
-  
-  // 查看文件内容状态
-  const [viewingFile, setViewingFile] = useState<{ id: number; filename: string; data: any[] } | null>(null);
-  const [viewLoading, setViewLoading] = useState(false);
 
   useEffect(() => {
     loadFiles();
@@ -38,7 +34,14 @@ export default function DataManagement() {
     try {
       setLoading(true);
       const data = await dataService.getDataFiles();
-      setFiles(data);
+      // 转换后端字段名为前端期望的字段名
+      const transformedFiles = data.map(file => ({
+        ...file,
+        name: file.filename,
+        size: file.file_size,
+        upload_time: file.created_at,
+      }));
+      setFiles(transformedFiles);
     } catch (err: any) {
       setError(err.response?.data?.error || '加载文件列表失败');
     } finally {
@@ -90,7 +93,7 @@ export default function DataManagement() {
         setSuccess(`成功上传 ${successCount} 个文件`);
       }
 
-      await loadFiles();
+      await loadFiles();  // loadFiles 会自动转换字段名
       // 清空文件选择
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -282,29 +285,6 @@ export default function DataManagement() {
       minute: '2-digit',
       second: '2-digit'
     });
-  };
-
-  // 查看文件内容
-  const handleViewContent = async (file: DataFile) => {
-    try {
-      setViewLoading(true);
-      setError('');
-      const content = await dataService.getDataFileContent(file.id);
-      setViewingFile({
-        id: file.id,
-        filename: content.filename,
-        data: content.data,
-      });
-    } catch (err: any) {
-      setError(err.message || '获取文件内容失败');
-    } finally {
-      setViewLoading(false);
-    }
-  };
-
-  // 关闭查看弹窗
-  const closeViewModal = () => {
-    setViewingFile(null);
   };
 
   return (
@@ -533,14 +513,6 @@ export default function DataManagement() {
                           编辑
                         </button>
                         <button
-                          onClick={() => handleViewContent(file)}
-                          className="text-blue-600 hover:text-blue-900"
-                          disabled={viewLoading}
-                          title="查看内容"
-                        >
-                          查看
-                        </button>
-                        <button
                           onClick={() => handleDelete(file.id)}
                           className="text-red-600 hover:text-red-900"
                           title="删除文件"
@@ -556,50 +528,6 @@ export default function DataManagement() {
           </div>
         )}
       </div>
-
-      {/* View Content Modal */}
-      {viewingFile && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">
-                文件内容: {viewingFile.filename}
-                <span className="ml-2 text-sm text-gray-500">(共 {viewingFile.data.length} 条数据)</span>
-              </h3>
-              <button
-                onClick={closeViewModal}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="flex-1 overflow-auto p-6">
-              <div className="space-y-4">
-                {viewingFile.data.map((item, index) => (
-                  <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-500">第 {index + 1} 条</span>
-                    </div>
-                    <pre className="text-sm text-gray-800 whitespace-pre-wrap break-words overflow-auto max-h-60 bg-white p-3 rounded border">
-                      {JSON.stringify(item, null, 2)}
-                    </pre>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
-              <button
-                onClick={closeViewModal}
-                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
-              >
-                关闭
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 删除确认弹窗 */}
       <ConfirmDialog

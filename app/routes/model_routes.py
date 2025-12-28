@@ -10,8 +10,10 @@ import sys
 import json
 import time
 import logging
+from pathlib import Path
 from typing import List, Dict, Optional
 
+import yaml
 import redis
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
@@ -42,7 +44,6 @@ class ModelCallRequest(BaseModel):
     timeout: int = 300
     is_vllm: bool = False
     top_p: float = 1.0
-    retry_times: int = 3
 
 
 class ModelCallResponse(BaseModel):
@@ -52,9 +53,6 @@ class ModelCallResponse(BaseModel):
     error: Optional[str] = None
 
 
-# 导入统一配置模块
-from config import get_redis_config
-
 # ========== Redis 配置 ==========
 
 _redis_client = None
@@ -63,16 +61,30 @@ def get_redis_client():
     """获取 Redis 客户端（单例模式）"""
     global _redis_client
     if _redis_client is None:
-        redis_config = get_redis_config()
+        config = _get_yaml_config()
+        redis_config = config.get('redis_service', {})
+        host = redis_config.get('host', 'localhost')
+        port = redis_config.get('port', 6379)
+        db = redis_config.get('db', 0)
+        password = redis_config.get('password', None)
         
         _redis_client = redis.Redis(
-            host=redis_config['host'],
-            port=redis_config['port'],
-            db=redis_config['db'],
-            password=redis_config['password'],
+            host=host,
+            port=port,
+            db=db,
+            password=password,
             decode_responses=True
         )
     return _redis_client
+
+
+def _get_yaml_config() -> dict:
+    """读取 YAML 配置文件"""
+    config_path = Path(__file__).parent.parent.parent / "config" / "config.yaml"
+    if config_path.exists():
+        with open(config_path, 'r', encoding='utf-8') as f:
+            return yaml.safe_load(f) or {}
+    return {}
 
 
 def get_model_max_concurrency(model_name: str) -> int:
@@ -93,8 +105,8 @@ def get_model_max_concurrency(model_name: str) -> int:
             return model.max_concurrent
         
         # 默认并发数
-        redis_config = get_redis_config()
-        return redis_config['default_max_concurrency']
+        config = _get_yaml_config()
+        return config.get('redis_service', {}).get('default_max_concurrency', 16)
     finally:
         db.close()
 
@@ -125,9 +137,13 @@ def _model_call_sync(request: ModelCallRequest) -> ModelCallResponse:
     """
     同步执行模型调用（在线程池中运行）
     """
-    # 从统一配置模块读取
-    redis_config = get_redis_config()
-    max_wait_time = redis_config['max_wait_time']
+    # 读取配置
+    config_path = Path(__file__).parent.parent.parent / "config" / "config.yaml"
+    with open(config_path, 'r', encoding='utf-8') as f:
+        yaml_config = yaml.safe_load(f)
+    
+    redis_config = yaml_config.get('redis_service', {})
+    max_wait_time = redis_config.get('max_wait_time', 300)  # 最大等待300秒
     
     model_name = request.model
     redis_key = f"model_concurrency:{model_name}"
@@ -204,8 +220,7 @@ def _model_call_sync(request: ModelCallRequest) -> ModelCallResponse:
                     temperature=request.temperature,
                     max_tokens=request.max_tokens,
                     timeout=request.timeout,
-                    top_p=request.top_p,
-                    retry_times=request.retry_times
+                    top_p=request.top_p
                 )
             else:
                 result = call_openai_api_sync(
@@ -216,8 +231,7 @@ def _model_call_sync(request: ModelCallRequest) -> ModelCallResponse:
                     temperature=request.temperature,
                     max_tokens=request.max_tokens,
                     timeout=request.timeout,
-                    top_p=request.top_p,
-                    retry_times=request.retry_times
+                    top_p=request.top_p
                 )
             
             return ModelCallResponse(success=True, content=result)
@@ -245,8 +259,7 @@ def _model_call_sync(request: ModelCallRequest) -> ModelCallResponse:
                     temperature=request.temperature,
                     max_tokens=request.max_tokens,
                     timeout=request.timeout,
-                    top_p=request.top_p,
-                    retry_times=request.retry_times
+                    top_p=request.top_p
                 )
             else:
                 result = call_openai_api_sync(
@@ -257,8 +270,7 @@ def _model_call_sync(request: ModelCallRequest) -> ModelCallResponse:
                     temperature=request.temperature,
                     max_tokens=request.max_tokens,
                     timeout=request.timeout,
-                    top_p=request.top_p,
-                    retry_times=request.retry_times
+                    top_p=request.top_p
                 )
             return ModelCallResponse(success=True, content=result)
         except Exception as call_error:
@@ -293,9 +305,8 @@ def call_vllm_api_sync(
     max_tokens: int = 8192,
     timeout: int = 600,
     top_p: float = 1.0,
-    retry_times: int = 3,
 ) -> str:
-    """同步调用vllm API（带重试）"""
+    """同步调用vllm API"""
     import requests
     
     do_sample = temperature > 0.0
@@ -317,85 +328,34 @@ def call_vllm_api_sync(
         base_url += '/v1'
     full_url = f"{base_url}{endpoint}"
     
-    # 重试逻辑
-    for attempt in range(retry_times):
-        try:
-            full_response = ""
-            
-            with requests.post(
-                full_url,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                stream=True,
-                timeout=timeout
-            ) as response:
-                response.raise_for_status()
-                
-                for line in response.iter_lines():
-                    if not line:
-                        continue
-                    line = line.decode('utf-8').strip()
-                    if line.startswith("data: "):
-                        data_str = line[6:]
-                        if data_str == "[DONE]":
-                            return full_response.strip()
-                        try:
-                            data = json.loads(data_str)
-                            delta = data["choices"][0]["delta"].get("content", "")
-                            if delta:
-                                full_response += delta
-                        except (KeyError, json.JSONDecodeError):
-                            continue
-                
-                return full_response.strip()
-        
-        except requests.exceptions.Timeout as e:
-            if attempt < retry_times - 1:
-                wait_time = (attempt + 1) * 2  # 指数退避：2, 4, 6 秒
-                logger.warning(f"[vLLM API] 调用超时，{wait_time}秒后重试 (尝试 {attempt + 1}/{retry_times}): {str(e)}")
-                time.sleep(wait_time)
-                continue
-            else:
-                logger.error(f"[vLLM API] 重试{retry_times}次后仍然超时: {str(e)}")
-                raise
-        
-        except requests.exceptions.ConnectionError as e:
-            if attempt < retry_times - 1:
-                wait_time = (attempt + 1) * 2
-                logger.warning(f"[vLLM API] 连接错误，{wait_time}秒后重试 (尝试 {attempt + 1}/{retry_times}): {str(e)}")
-                time.sleep(wait_time)
-                continue
-            else:
-                logger.error(f"[vLLM API] 重试{retry_times}次后仍然连接失败: {str(e)}")
-                raise
-        
-        except requests.exceptions.HTTPError as e:
-            # 4xx 错误不重试（客户端错误）
-            if 400 <= e.response.status_code < 500:
-                logger.error(f"[vLLM API] 客户端错误，不重试: {str(e)}")
-                raise
-            # 5xx 错误重试（服务器错误）
-            if attempt < retry_times - 1:
-                wait_time = (attempt + 1) * 2
-                logger.warning(f"[vLLM API] 服务器错误，{wait_time}秒后重试 (尝试 {attempt + 1}/{retry_times}): {str(e)}")
-                time.sleep(wait_time)
-                continue
-            else:
-                logger.error(f"[vLLM API] 重试{retry_times}次后仍然失败: {str(e)}")
-                raise
-        
-        except Exception as e:
-            if attempt < retry_times - 1:
-                wait_time = (attempt + 1) * 2
-                logger.warning(f"[vLLM API] 未知错误，{wait_time}秒后重试 (尝试 {attempt + 1}/{retry_times}): {type(e).__name__}: {str(e)}")
-                time.sleep(wait_time)
-                continue
-            else:
-                logger.error(f"[vLLM API] 重试{retry_times}次后仍然失败: {type(e).__name__}: {str(e)}")
-                raise
+    full_response = ""
     
-    # 理论上不会到这里
-    raise Exception("API调用失败")
+    with requests.post(
+        full_url,
+        json=payload,
+        headers={"Content-Type": "application/json"},
+        stream=True,
+        timeout=timeout
+    ) as response:
+        response.raise_for_status()
+        
+        for line in response.iter_lines():
+            if not line:
+                continue
+            line = line.decode('utf-8').strip()
+            if line.startswith("data: "):
+                data_str = line[6:]
+                if data_str == "[DONE]":
+                    return full_response.strip()
+                try:
+                    data = json.loads(data_str)
+                    delta = data["choices"][0]["delta"].get("content", "")
+                    if delta:
+                        full_response += delta
+                except (KeyError, json.JSONDecodeError):
+                    continue
+        
+        return full_response.strip()
 
 
 def call_openai_api_sync(
@@ -407,75 +367,23 @@ def call_openai_api_sync(
     max_tokens: int = 16384,
     timeout: int = 300,
     top_p: float = 1.0,
-    retry_times: int = 3,
 ) -> str:
-    """同步调用OpenAI兼容API（带重试）"""
+    """同步调用OpenAI兼容API"""
     import openai
     
-    # 重试逻辑
-    for attempt in range(retry_times):
-        try:
-            client = openai.OpenAI(
-                api_key=api_key,
-                base_url=api_url,
-                timeout=timeout,
-                max_retries=0  # 我们自己实现重试逻辑
-            )
-            
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                top_p=top_p,
-                max_tokens=max_tokens
-            )
-            
-            return response.choices[0].message.content.strip()
-        
-        except openai.APITimeoutError as e:
-            if attempt < retry_times - 1:
-                wait_time = (attempt + 1) * 2
-                logger.warning(f"[OpenAI API] 调用超时，{wait_time}秒后重试 (尝试 {attempt + 1}/{retry_times}): {str(e)}")
-                time.sleep(wait_time)
-                continue
-            else:
-                logger.error(f"[OpenAI API] 重试{retry_times}次后仍然超时: {str(e)}")
-                raise
-        
-        except openai.APIConnectionError as e:
-            if attempt < retry_times - 1:
-                wait_time = (attempt + 1) * 2
-                logger.warning(f"[OpenAI API] 连接错误，{wait_time}秒后重试 (尝试 {attempt + 1}/{retry_times}): {str(e)}")
-                time.sleep(wait_time)
-                continue
-            else:
-                logger.error(f"[OpenAI API] 重试{retry_times}次后仍然连接失败: {str(e)}")
-                raise
-        
-        except openai.APIStatusError as e:
-            # 4xx 错误不重试（客户端错误）
-            if 400 <= e.status_code < 500:
-                logger.error(f"[OpenAI API] 客户端错误，不重试: {str(e)}")
-                raise
-            # 5xx 错误重试（服务器错误）
-            if attempt < retry_times - 1:
-                wait_time = (attempt + 1) * 2
-                logger.warning(f"[OpenAI API] 服务器错误，{wait_time}秒后重试 (尝试 {attempt + 1}/{retry_times}): {str(e)}")
-                time.sleep(wait_time)
-                continue
-            else:
-                logger.error(f"[OpenAI API] 重试{retry_times}次后仍然失败: {str(e)}")
-                raise
-        
-        except Exception as e:
-            if attempt < retry_times - 1:
-                wait_time = (attempt + 1) * 2
-                logger.warning(f"[OpenAI API] 未知错误，{wait_time}秒后重试 (尝试 {attempt + 1}/{retry_times}): {type(e).__name__}: {str(e)}")
-                time.sleep(wait_time)
-                continue
-            else:
-                logger.error(f"[OpenAI API] 重试{retry_times}次后仍然失败: {type(e).__name__}: {str(e)}")
-                raise
+    client = openai.OpenAI(
+        api_key=api_key,
+        base_url=api_url,
+        timeout=timeout,
+        max_retries=0
+    )
     
-    # 理论上不会到这里
-    raise Exception("API调用失败")
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_tokens
+    )
+    
+    return response.choices[0].message.content.strip()

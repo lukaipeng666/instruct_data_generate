@@ -1,5 +1,5 @@
 #!/bin/bash
-# 启动数据生成任务管理系统（前后端分离模式）
+# 启动数据生成任务管理系统（Go后端 + React前端）
 
 set -e
 
@@ -11,7 +11,7 @@ echo "启动数据生成任务管理系统"
 echo "=========================================="
 
 # 从 config.yaml 读取配置
-get_all_config() {
+get_config() {
     python3 -c "
 import yaml
 with open('config/config.yaml', 'r') as f:
@@ -25,187 +25,157 @@ print(redis_config.get('port', 6379))
 # Web 服务配置
 web_config = config.get('web_service', {})
 print(web_config.get('host', '0.0.0.0'))
-print(web_config.get('port', 5000))
-
-# HTTPS 配置
-print('true' if web_config.get('https_enabled', False) else 'false')
-print(web_config.get('ssl_certfile', 'cert.pem'))
-print(web_config.get('ssl_keyfile', 'key.pem'))
+print(web_config.get('port', 8080))
 
 # 前端配置
 frontend_config = config.get('frontend', {})
 frontend_url = frontend_config.get('url', 'http://localhost:3000')
-# 从 URL 提取端口
 import re
-match = re.search(r':(\d+)$', frontend_url)
+match = re.search(r':(\d+)\$', frontend_url)
 print(match.group(1) if match else '3000')
-"
+" 2>/dev/null
 }
 
-# 检查Python环境
-if ! command -v python3 &> /dev/null; then
-    echo "错误: 未找到 python3"
-    exit 1
-fi
-
-# 检查并安装后端依赖
+# 读取配置
 echo ""
-echo "【后端】检查Python依赖..."
-if ! python3 -c "import fastapi" 2>/dev/null; then
-    echo "安装后端依赖..."
-    pip3 install -r requirements.txt
+echo "【配置】读取配置文件..."
+CONFIG=$(get_config)
+if [ -z "$CONFIG" ]; then
+    echo "警告: 无法读取配置文件，使用默认配置"
+    REDIS_HOST="localhost"
+    REDIS_PORT="6379"
+    BACKEND_HOST="0.0.0.0"
+    BACKEND_PORT="8080"
+    FRONTEND_PORT="3000"
 else
-    echo "后端依赖已安装"
+    REDIS_HOST=$(echo "$CONFIG" | sed -n '1p')
+    REDIS_PORT=$(echo "$CONFIG" | sed -n '2p')
+    BACKEND_HOST=$(echo "$CONFIG" | sed -n '3p')
+    BACKEND_PORT=$(echo "$CONFIG" | sed -n '4p')
+    FRONTEND_PORT=$(echo "$CONFIG" | sed -n '5p')
 fi
 
-# 检查Node.js环境（用于前端）
-HAS_NODE=false
-if command -v node &> /dev/null && command -v npm &> /dev/null; then
-    HAS_NODE=true
-    echo ""
-    echo "【前端】检查Node.js依赖..."
-    cd frontend
-    
-    if [ ! -d "node_modules" ]; then
-        echo "安装前端依赖..."
-        npm install
-    else
-        echo "前端依赖已安装"
-    fi
-    
-    cd ..
-else
-    echo ""
-    echo "警告: 未安装Node.js，前端无法启动"
-    echo "请安装Node.js (>= 16): https://nodejs.org/"
-    exit 1
-fi
+echo "配置信息:"
+echo "  - Redis: $REDIS_HOST:$REDIS_PORT"
+echo "  - Go后端: $BACKEND_HOST:$BACKEND_PORT"
+echo "  - 前端端口: $FRONTEND_PORT"
 
 # 创建日志目录
 mkdir -p log
 
-# 启动 Redis 服务
+# ==================== 启动 Redis ====================
 echo ""
 echo "【Redis】检查并启动 Redis 服务..."
 
-# 读取所有配置
-ALL_CONFIG=$(get_all_config)
-REDIS_HOST=$(echo "$ALL_CONFIG" | sed -n '1p')
-REDIS_PORT=$(echo "$ALL_CONFIG" | sed -n '2p')
-BACKEND_HOST=$(echo "$ALL_CONFIG" | sed -n '3p')
-BACKEND_PORT=$(echo "$ALL_CONFIG" | sed -n '4p')
-HTTPS_ENABLED=$(echo "$ALL_CONFIG" | sed -n '5p')
-SSL_CERTFILE=$(echo "$ALL_CONFIG" | sed -n '6p')
-SSL_KEYFILE=$(echo "$ALL_CONFIG" | sed -n '7p')
-FRONTEND_PORT=$(echo "$ALL_CONFIG" | sed -n '8p')
-
-echo "配置信息:"
-echo "  - Redis: $REDIS_HOST:$REDIS_PORT"
-echo "  - 后端: $BACKEND_HOST:$BACKEND_PORT"
-echo "  - HTTPS: $HTTPS_ENABLED"
-echo "  - 前端端口: $FRONTEND_PORT"
-
-# 检查 Redis 是否已在运行
 if command -v redis-cli &> /dev/null; then
     if redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ping > /dev/null 2>&1; then
-        echo "Redis 服务已在运行中 ($REDIS_HOST:$REDIS_PORT)"
+        echo "✅ Redis 服务已在运行中 ($REDIS_HOST:$REDIS_PORT)"
     else
-        # Redis 未运行，尝试启动
         if command -v redis-server &> /dev/null; then
-            echo "启动 Redis 服务 (端口: $REDIS_PORT, 持久化已禁用)..."
-            nohup redis-server --port "$REDIS_PORT" --daemonize yes --save "" --appendonly no > log/redis.log 2>&1
+            echo "启动 Redis 服务..."
+            redis-server --port "$REDIS_PORT" --daemonize yes --save "" --appendonly no > log/redis.log 2>&1
             sleep 1
             
-            # 验证 Redis 是否启动成功
             if redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ping > /dev/null 2>&1; then
-                echo "Redis 服务已启动 ($REDIS_HOST:$REDIS_PORT)"
+                echo "✅ Redis 服务已启动 ($REDIS_HOST:$REDIS_PORT)"
             else
-                echo "警告: Redis 启动失败，任务进度功能可能不可用"
+                echo "⚠️ Redis 启动失败，任务进度功能可能不可用"
             fi
         else
-            echo "警告: 未安装 redis-server，跳过 Redis 启动"
-            echo "提示: 可通过 'brew install redis' (macOS) 或 'apt install redis-server' (Linux) 安装"
+            echo "⚠️ 未安装 redis-server，跳过 Redis 启动"
+            echo "   提示: brew install redis (macOS) 或 apt install redis-server (Linux)"
         fi
     fi
 else
-    echo "警告: 未安装 redis-cli，无法检查 Redis 状态"
-    echo "提示: 可通过 'brew install redis' (macOS) 或 'apt install redis-server' (Linux) 安装"
+    echo "⚠️ 未安装 redis-cli，无法检查 Redis 状态"
 fi
 
-# 启动后端服务
+# ==================== 启动 Go 后端 ====================
 echo ""
-if [ "$HTTPS_ENABLED" = "true" ]; then
-    echo "【后端】启动API服务器 (HTTPS, ${BACKEND_PORT}端口)..."
-    
-    # 检查证书文件是否存在
-    if [ ! -f "$SSL_CERTFILE" ] || [ ! -f "$SSL_KEYFILE" ]; then
-        echo "证书文件不存在，正在生成自签名证书..."
-        openssl req -x509 -newkey rsa:2048 -keyout "$SSL_KEYFILE" -out "$SSL_CERTFILE" -days 365 -nodes -subj "/CN=localhost" 2>/dev/null
-        echo "✅ 证书生成成功"
-    fi
-    
-    SSL_ARGS="--ssl-keyfile=$SSL_KEYFILE --ssl-certfile=$SSL_CERTFILE"
-    PROTOCOL="https"
-else
-    echo "【后端】启动API服务器 (HTTP, ${BACKEND_PORT}端口)..."
-    SSL_ARGS=""
-    PROTOCOL="http"
-fi
-if [ -f log/web_app.pid ]; then
-    PID=$(cat log/web_app.pid)
-    if ps -p $PID > /dev/null 2>&1; then
-        echo "后端服务已经在运行中 (PID: $PID)"
-    else
-        rm log/web_app.pid
-        # 启动后端
-        if python3 -c "import uvicorn" 2>/dev/null; then
-            nohup python3 -m uvicorn app.app:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" $SSL_ARGS > log/web_app.log 2>&1 &
-        else
-            nohup python3 ./app/app.py > log/web_app.log 2>&1 &
-        fi
-        BACKEND_PID=$!
-        echo $BACKEND_PID > log/web_app.pid
-        sleep 2
-        echo "后端服务已启动 (PID: $BACKEND_PID)"
-    fi
-else
-    if python3 -c "import uvicorn" 2>/dev/null; then
-        nohup python3 -m uvicorn app.app:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" $SSL_ARGS > log/web_app.log 2>&1 &
-    else
-        nohup python3 ./app/app.py > log/web_app.log 2>&1 &
-    fi
-    BACKEND_PID=$!
-    echo $BACKEND_PID > log/web_app.pid
-    sleep 2
-    echo "后端服务已启动 (PID: $BACKEND_PID)"
+echo "【Go后端】检查并启动 API 服务器..."
+
+# 检查 Go 是否安装
+if ! command -v go &> /dev/null; then
+    echo "❌ 错误: 未安装 Go"
+    echo "   请安装 Go: https://golang.org/dl/"
+    exit 1
 fi
 
-# 启动前端服务
-echo ""
-echo "【前端】启动开发服务器 (${FRONTEND_PORT}端口)..."
-if [ -f log/frontend.pid ]; then
-    PID=$(cat log/frontend.pid)
-    if ps -p $PID > /dev/null 2>&1; then
-        echo "前端服务已经在运行中 (PID: $PID)"
-    else
-        rm log/frontend.pid
-        cd frontend
-        nohup npm run dev -- --port "$FRONTEND_PORT" > ../log/frontend.log 2>&1 &
-        FRONTEND_PID=$!
-        echo $FRONTEND_PID > ../log/frontend.pid
-        cd ..
-        sleep 3
-        echo "前端服务已启动 (PID: $FRONTEND_PID)"
-    fi
-else
-    cd frontend
-    nohup npm run dev -- --port "$FRONTEND_PORT" > ../log/frontend.log 2>&1 &
-    FRONTEND_PID=$!
-    echo $FRONTEND_PID > ../log/frontend.pid
-    cd ..
-    sleep 3
-    echo "前端服务已启动 (PID: $FRONTEND_PID)"
+# 检查端口是否被占用
+if lsof -ti:$BACKEND_PORT > /dev/null 2>&1; then
+    EXISTING_PID=$(lsof -ti:$BACKEND_PORT)
+    echo "端口 $BACKEND_PORT 已被占用 (PID: $EXISTING_PID)"
+    echo "正在停止现有进程..."
+    kill -9 $EXISTING_PID 2>/dev/null || true
+    sleep 1
 fi
+
+# 编译 Go 程序
+echo "编译 Go 后端..."
+if ! go build -o server ./cmd/server/main.go 2>&1; then
+    echo "❌ Go 编译失败"
+    exit 1
+fi
+
+# 启动 Go 后端
+echo "启动 Go 后端服务..."
+nohup ./server > log/go_backend.log 2>&1 &
+GO_PID=$!
+echo $GO_PID > log/go_backend.pid
+sleep 2
+
+# 验证后端是否启动成功
+if curl -s "http://localhost:$BACKEND_PORT" > /dev/null 2>&1; then
+    echo "✅ Go 后端已启动 (PID: $GO_PID, 端口: $BACKEND_PORT)"
+else
+    echo "❌ Go 后端启动失败，请检查日志: log/go_backend.log"
+    cat log/go_backend.log | tail -20
+    exit 1
+fi
+
+# ==================== 启动前端 ====================
+echo ""
+echo "【前端】检查并启动开发服务器..."
+
+# 检查 Node.js 是否安装
+if ! command -v node &> /dev/null || ! command -v npm &> /dev/null; then
+    echo "❌ 错误: 未安装 Node.js"
+    echo "   请安装 Node.js (>= 16): https://nodejs.org/"
+    exit 1
+fi
+
+# 检查前端端口是否被占用
+if lsof -ti:$FRONTEND_PORT > /dev/null 2>&1; then
+    EXISTING_PID=$(lsof -ti:$FRONTEND_PORT)
+    echo "端口 $FRONTEND_PORT 已被占用 (PID: $EXISTING_PID)"
+    echo "正在停止现有进程..."
+    kill -9 $EXISTING_PID 2>/dev/null || true
+    sleep 1
+fi
+
+# 检查并安装前端依赖
+cd frontend
+if [ ! -d "node_modules" ]; then
+    echo "安装前端依赖..."
+    npm install
+fi
+
+# 启动前端开发服务器
+echo "启动前端开发服务器..."
+nohup npm run dev -- --port "$FRONTEND_PORT" --host > ../log/frontend.log 2>&1 &
+FRONTEND_PID=$!
+echo $FRONTEND_PID > ../log/frontend.pid
+cd ..
+sleep 3
+
+# 验证前端是否启动成功
+if curl -s "http://localhost:$FRONTEND_PORT" > /dev/null 2>&1; then
+    echo "✅ 前端已启动 (PID: $FRONTEND_PID, 端口: $FRONTEND_PORT)"
+else
+    echo "⚠️ 前端可能仍在启动中，请稍后检查"
+fi
+
+# ==================== 显示状态 ====================
 
 # 获取局域网 IP 地址
 get_local_ip() {
@@ -222,21 +192,21 @@ LOCAL_IP=$(get_local_ip)
 
 echo ""
 echo "=========================================="
-echo "系统启动成功！"
+echo "🚀 系统启动成功！"
 echo "=========================================="
-echo "前端地址: http://localhost:${FRONTEND_PORT}"
-echo "局域网前端: http://$LOCAL_IP:${FRONTEND_PORT}"
-echo "后端API: http://localhost:${BACKEND_PORT}"
-echo "API文档: http://localhost:${BACKEND_PORT}/docs"
 echo ""
-echo "日志文件:"
-echo "  - 后端: log/web_app.log"
-echo "  - 前端: log/frontend.log"
-echo "  - Redis: log/redis.log"
+echo "📱 访问地址:"
+echo "   前端页面:     http://localhost:${FRONTEND_PORT}"
+echo "   局域网访问:   http://$LOCAL_IP:${FRONTEND_PORT}"
+echo "   后端 API:     http://localhost:${BACKEND_PORT}"
 echo ""
-echo "提示:"
-echo "  - 查看后端日志: tail -f log/web_app.log"
-echo "  - 查看前端日志: tail -f log/frontend.log"
-echo "  - 停止服务: ./stop.sh"
-echo "  - 配置文件: config/config.yaml"
+echo "📋 日志文件:"
+echo "   Go 后端:  tail -f log/go_backend.log"
+echo "   前端:     tail -f log/frontend.log"
+echo "   Redis:    log/redis.log"
+echo ""
+echo "🔧 管理命令:"
+echo "   停止服务:  ./stop.sh"
+echo "   查看状态:  ./status.sh (如有)"
+echo ""
 echo "=========================================="

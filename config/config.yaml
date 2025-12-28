@@ -1,12 +1,15 @@
 # 服务配置文件
 
+# 项目根目录（用于执行 Python 脚本）
+project_root: "/Users/lukaipeng2/Desktop/GEN_GO_PYTHON/gen_go"
+
 # Web 服务配置
 web_service:
   host: "0.0.0.0"
-  port: 5000
+  port: 8080
   # 生产模式：禁用 API 文档（/docs, /redoc, /openapi.json）
   # 开发时设为 false，部署时设为 true
-  production_mode: true
+  production_mode: false
 
 # 前端配置
 frontend:

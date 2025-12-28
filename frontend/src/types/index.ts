@@ -77,11 +77,18 @@ export interface AdminTask {
 
 // 数据文件相关类型
 export interface DataFile {
-  id: number;  // 修改为 number 类型以匹配后端返回的整数ID
-  name: string;
-  size: number;
-  upload_time: string;
-  path: string;
+  id: number;
+  filename: string;  // 后端返回 filename
+  file_size: number;  // 后端返回 file_size
+  created_at: string;  // 后端返回 created_at
+  content_type?: string;
+  user_id?: number;
+  updated_at?: string;
+
+  // 兼容前端组件使用的字段名（计算属性）
+  name?: string;
+  size?: number;
+  upload_time?: string;
 }
 
 // 报告相关类型
