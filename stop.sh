@@ -59,7 +59,7 @@ if [ -f "$GO_PID_FILE" ]; then
 fi
 
 # 方法2: 通过进程名查找并停止
-GO_PIDS=$(pgrep -f "./server" 2>/dev/null || true)
+GO_PIDS=$(pgrep -f "./backend/server" 2>/dev/null || true)
 if [ ! -z "$GO_PIDS" ]; then
     echo "发现 Go 后端进程，正在停止..."
     for pid in $GO_PIDS; do
@@ -67,7 +67,7 @@ if [ ! -z "$GO_PIDS" ]; then
     done
     sleep 1
     # 强制停止仍在运行的进程
-    GO_PIDS=$(pgrep -f "./server" 2>/dev/null || true)
+    GO_PIDS=$(pgrep -f "./backend/server" 2>/dev/null || true)
     if [ ! -z "$GO_PIDS" ]; then
         for pid in $GO_PIDS; do
             kill -9 $pid 2>/dev/null || true
