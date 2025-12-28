@@ -40,18 +40,30 @@ api.interceptors.response.use(
 
 export const authService = {
   login: async (username: string, password: string): Promise<LoginResponse> => {
-    const response = await api.post<LoginResponse>('/login', { username, password });
-    return response.data;
+    const response = await api.post<{ code: number; message: string; data: { access_token: string; token_type: string; user: { username: string; is_admin: boolean } } }>('/login', { username, password });
+    const { access_token, token_type, user } = response.data.data;
+    return {
+      access_token,
+      token_type,
+      username: user.username,
+      is_admin: user.is_admin
+    };
   },
-  
+
   register: async (username: string, password: string): Promise<LoginResponse> => {
-    const response = await api.post<LoginResponse>('/register', { username, password });
-    return response.data;
+    const response = await api.post<{ code: number; message: string; data: { access_token: string; token_type: string; user: { username: string; is_admin: boolean } } }>('/register', { username, password });
+    const { access_token, token_type, user } = response.data.data;
+    return {
+      access_token,
+      token_type,
+      username: user.username,
+      is_admin: user.is_admin
+    };
   },
   
   getMe: async (): Promise<User> => {
-    const response = await api.get<User>('/me');
-    return response.data;
+    const response = await api.get<{ code: number; message: string; data: User }>('/me');
+    return response.data.data;
   },
   
   logout: async (): Promise<void> => {
@@ -61,35 +73,35 @@ export const authService = {
 
 export const taskService = {
   getTaskTypes: async (): Promise<string[]> => {
-    const response = await api.get<{ success: boolean; types: string[] }>('/task_types');
-    return response.data.types;
+    const response = await api.get<{ code: number; message: string; data: { success: boolean; types: string[] } }>('/task_types');
+    return response.data.data.types;
   },
-  
+
   // 获取激活的模型列表（普通用户）
   getActiveModels: async (): Promise<ModelConfig[]> => {
-    const response = await api.get<{ success: boolean; models: ModelConfig[] }>('/models');
-    return response.data.models;
+    const response = await api.get<{ code: number; message: string; data: { success: boolean; models: ModelConfig[]; total: number } }>('/models');
+    return response.data.data.models;
   },
-  
+
   startTask: async (params: TaskParams): Promise<{ success: boolean; task_id: string }> => {
-    const response = await api.post<{ success: boolean; task_id: string }>('/start', params);
-    return response.data;
+    const response = await api.post<{ code: number; message: string; data: { success: boolean; task_id: string } }>('/start', params);
+    return response.data.data;
   },
-  
+
   stopTask: async (taskId: string): Promise<void> => {
     await api.post(`/stop/${taskId}`);
   },
-  
+
   getActiveTask: async (): Promise<{ success: boolean; task_id?: string; params?: TaskParams }> => {
-    const response = await api.get<{ success: boolean; task_id?: string; params?: TaskParams }>('/active_task');
-    return response.data;
+    const response = await api.get<{ code: number; message: string; data: { success: boolean; task_id?: string; params?: TaskParams } }>('/active_task');
+    return response.data.data;
   },
-  
+
   getAllTasks: async (): Promise<Task[]> => {
-    const response = await api.get<{ success: boolean; tasks: Task[] }>('/tasks');
-    return response.data.tasks;
+    const response = await api.get<{ code: number; message: string; data: Task[] }>('/tasks');
+    return response.data.data;
   },
-  
+
   // 获取任务进度（从Redis）
   getTaskProgress: async (taskId: string): Promise<{
     success: boolean;
@@ -106,8 +118,8 @@ export const taskService = {
     error?: string;
   }> => {
     const encodedTaskId = encodeURIComponent(taskId);
-    const response = await api.get(`/progress_unified/${encodedTaskId}`);
-    return response.data;
+    const response = await api.get<{ code: number; message: string; data: { success: boolean; progress?: any } }>(`/progress_unified/${encodedTaskId}`);
+    return response.data.data;
   },
 };
 
@@ -115,50 +127,52 @@ export const taskService = {
 export const dataService = {
   // 获取数据文件列表
   getDataFiles: async (): Promise<DataFile[]> => {
-    const response = await api.get<{ success: boolean; files: DataFile[] }>('/data_files');
-    return response.data.files;
+    const response = await api.get<{ code: number; message: string; data: DataFile[] }>('/data_files');
+    return response.data.data;
   },
-  
+
   // 上传数据文件
   uploadDataFile: async (file: File): Promise<DataFile> => {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await api.post<{ success: boolean; file: DataFile; message: string }>('/data_files/upload', formData, {
+    const response = await api.post<{ code: number; message: string; data: DataFile }>('/data_files/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
     });
-    return response.data.file;
+    return response.data.data;
   },
-  
+
   // 删除数据文件
   deleteDataFile: async (fileId: number): Promise<void> => {
     await api.delete(`/data_files/${fileId}`);
   },
-  
+
   // 批量删除数据文件
   batchDeleteDataFiles: async (fileIds: number[]): Promise<{ deleted_count: number; errors: string[] }> => {
-    const response = await api.post<{ success: boolean; deleted_count: number; errors: string[]; message: string }>('/data_files/batch_delete', { file_ids: fileIds });
-    return { deleted_count: response.data.deleted_count, errors: response.data.errors };
+    const response = await api.post<{ code: number; message: string; data: { deleted_count: number; errors: string[] } }>('/data_files/batch_delete', { file_ids: fileIds });
+    return response.data.data;
   },
-  
+
   // 获取文件内容
   getDataFileContent: async (fileId: number): Promise<{ filename: string; total_lines: number; data: any[] }> => {
-    const response = await api.get<{ success: boolean; file_id: number; filename: string; total_lines: number; data: any[] }>(`/data_files/${fileId}/content`);
+    const response = await api.get<{ code: number; message: string; data: { file_id: number; filename: string; total_lines: number; data: any[] } }>(`/data_files/${fileId}/content`);
+    const data = response.data.data;
     return {
-      filename: response.data.filename,
-      total_lines: response.data.total_lines,
-      data: response.data.data,
+      filename: data.filename,
+      total_lines: data.total_lines,
+      data: data.data,
     };
   },
-  
+
   // 获取文件内容（带索引，用于编辑）
   getDataFileContentEditable: async (fileId: number): Promise<{ filename: string; total_lines: number; items: { index: number; data: any }[] }> => {
-    const response = await api.get<{ success: boolean; file_id: number; filename: string; total_lines: number; items: { index: number; data: any }[] }>(`/data_files/${fileId}/content/editable`);
+    const response = await api.get<{ code: number; message: string; data: { file_id: number; filename: string; total_lines: number; items: { index: number; data: any }[] } }>(`/data_files/${fileId}/content/editable`);
+    const data = response.data.data;
     return {
-      filename: response.data.filename,
-      total_lines: response.data.total_lines,
-      items: response.data.items,
+      filename: data.filename,
+      total_lines: data.total_lines,
+      items: data.items,
     };
   },
 
@@ -455,48 +469,48 @@ export const dataService = {
 export const adminService = {
   // 用户管理
   getAllUsers: async (): Promise<AdminUser[]> => {
-    const response = await api.get<{ success: boolean; users: AdminUser[] }>('/admin/users');
-    return response.data.users;
+    const response = await api.get<{ code: number; message: string; data: AdminUser[] }>('/admin/users');
+    return response.data.data;
   },
-  
+
   deleteUser: async (userId: number): Promise<void> => {
     await api.delete(`/admin/users/${userId}`);
   },
-  
+
   // 模型管理
   getAllModels: async (): Promise<ModelConfig[]> => {
-    const response = await api.get<{ success: boolean; models: ModelConfig[] }>('/admin/models');
-    return response.data.models;
+    const response = await api.get<{ code: number; message: string; data: ModelConfig[] }>('/admin/models');
+    return response.data.data;
   },
-  
+
   createModel: async (model: Partial<ModelConfig>): Promise<ModelConfig> => {
-    const response = await api.post<{ success: boolean; model: ModelConfig }>('/admin/models', model);
-    return response.data.model;
+    const response = await api.post<{ code: number; message: string; data: ModelConfig }>('/admin/models', model);
+    return response.data.data;
   },
-  
+
   updateModel: async (modelId: number, model: Partial<ModelConfig>): Promise<ModelConfig> => {
-    const response = await api.put<{ success: boolean; model: ModelConfig }>(`/admin/models/${modelId}`, model);
-    return response.data.model;
+    const response = await api.put<{ code: number; message: string; data: ModelConfig }>(`/admin/models/${modelId}`, model);
+    return response.data.data;
   },
-  
+
   deleteModel: async (modelId: number): Promise<void> => {
     await api.delete(`/admin/models/${modelId}`);
   },
-  
+
   // 任务管理
   getAllAdminTasks: async (): Promise<AdminTask[]> => {
-    const response = await api.get<{ success: boolean; tasks: AdminTask[] }>('/admin/tasks');
-    return response.data.tasks;
+    const response = await api.get<{ code: number; message: string; data: AdminTask[] }>('/admin/tasks');
+    return response.data.data;
   },
-  
+
   deleteAdminTask: async (taskId: number): Promise<void> => {
     await api.delete(`/admin/tasks/${taskId}`);
   },
-  
+
   // 获取指定用户的报告列表
   getUserReports: async (userId: number): Promise<UserReportsResponse> => {
-    const response = await api.get<UserReportsResponse>(`/admin/users/${userId}/reports`);
-    return response.data;
+    const response = await api.get<{ code: number; message: string; data: UserReportsResponse }>(`/admin/users/${userId}/reports`);
+    return response.data.data;
   },
   
   // 下载指定用户的报告数据
@@ -558,22 +572,22 @@ export const adminService = {
 export const reportService = {
   // 获取用户的所有报告列表
   getAllReports: async (): Promise<Report[]> => {
-    const response = await api.get<{ success: boolean; reports: Report[] }>('/reports');
-    return response.data.reports;
+    const response = await api.get<{ code: number; message: string; data: { success: boolean; reports: Report[]; total: number } }>('/reports');
+    return response.data.data.reports;
   },
-  
+
   // 获取指定任务的生成数据（预览）
   getReportData: async (taskId: string): Promise<GeneratedDataItem[]> => {
     const encodedTaskId = encodeURIComponent(taskId);
-    const response = await api.get<{ success: boolean; data: GeneratedDataItem[]; count: number }>(`/reports/${encodedTaskId}/data`);
+    const response = await api.get<{ code: number; message: string; data: GeneratedDataItem[]; count: number }>(`/reports/${encodedTaskId}/data`);
     return response.data.data;
   },
-  
+
   // 获取指定任务的生成数据（带ID，用于编辑）
   getReportDataEditable: async (taskId: string): Promise<{ id: number; data: GeneratedDataItem; is_confirmed: boolean; created_at: string | null; updated_at: string | null }[]> => {
     const encodedTaskId = encodeURIComponent(taskId);
-    const response = await api.get<{ success: boolean; data: { id: number; data: GeneratedDataItem; is_confirmed: boolean; created_at: string | null; updated_at: string | null }[]; count: number }>(`/reports/${encodedTaskId}/data/editable`);
-    return response.data.data;
+    const response = await api.get<{ code: number; message: string; data: { data: { id: number; data: GeneratedDataItem; is_confirmed: boolean; created_at: string | null; updated_at: string | null }[]; count: number; success: boolean } }>(`/reports/${encodedTaskId}/data/editable`);
+    return response.data.data.data;
   },
   
   // 更新单条生成数据
@@ -723,8 +737,9 @@ export const reportService = {
   
   // 批量删除报告
   batchDeleteReports: async (taskIds: string[]): Promise<{ deleted_count: number; errors: any[] }> => {
-    const response = await api.post<{ success: boolean; deleted_count: number; errors: any[]; message: string }>('/reports/batch_delete', { task_ids: taskIds });
-    return { deleted_count: response.data.deleted_count, errors: response.data.errors };
+    await api.post<{ code: number; message: string; data: { success: boolean } }>('/reports/batch_delete', { task_ids: taskIds });
+    // 后端只返回 success，不返回 deleted_count 和 errors
+    return { deleted_count: taskIds.length, errors: [] };
   },
 };
 

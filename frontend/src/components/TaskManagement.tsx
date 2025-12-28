@@ -27,6 +27,7 @@ export default function TaskManagement() {
   const [taskStatus, setTaskStatus] = useState<'idle' | 'running' | 'finished' | 'error'>('idle');
   const [taskProgress, setTaskProgress] = useState<TaskProgressData | null>(null);
   const progressIntervalRef = useRef<number | null>(null);
+  const sseAbortControllerRef = useRef<AbortController | null>(null);  // 用于跟踪 SSE 连接
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
 
@@ -49,10 +50,14 @@ export default function TaskManagement() {
     loadData();
     checkActiveTask();
     
-    // 清理进度轮询
+    // 清理进度轮询和 SSE 连接
     return () => {
       if (progressIntervalRef.current) {
         clearInterval(progressIntervalRef.current);
+      }
+      if (sseAbortControllerRef.current) {
+        sseAbortControllerRef.current.abort();
+        sseAbortControllerRef.current = null;
       }
     };
   }, []);
@@ -85,8 +90,12 @@ export default function TaskManagement() {
     try {
       const result = await taskService.getActiveTask();
       if (result.success && result.task_id) {
+        console.log('[checkActiveTask] 发现运行中的任务:', result.task_id);
+        // 直接恢复任务状态
         setCurrentTaskId(result.task_id);
         setTaskStatus('running');
+        setProgress([]);
+        setTaskProgress(null);
         connectProgress(result.task_id);
         startProgressPolling(result.task_id);
       }
@@ -122,34 +131,64 @@ export default function TaskManagement() {
   // 获取任务进度
   const fetchTaskProgress = async (taskId: string) => {
     try {
+      console.log('[fetchTaskProgress] 获取任务进度:', taskId);
       const result = await taskService.getTaskProgress(taskId);
+      console.log('[fetchTaskProgress] 进度数据:', result);
       if (result.success && result.progress) {
+        console.log('[fetchTaskProgress] 设置进度:', result.progress);
         setTaskProgress(result.progress);
-        
+
         // 如果任务完成，停止轮询
         if (result.progress.status === 'completed' || result.progress.status === 'failed') {
+          console.log('[fetchTaskProgress] 任务完成，停止轮询');
           stopProgressPolling();
         }
+      } else {
+        console.log('[fetchTaskProgress] 没有进度数据', result);
       }
     } catch (err) {
       // 静默失败，不影响用户体验
-      console.error('获取任务进度失败:', err);
+      console.error('[fetchTaskProgress] 获取任务进度失败:', err);
     }
   };
 
   const connectProgress = (taskId: string) => {
-    const token = localStorage.getItem('access_token');
-    if (!token) return;
-
-    let abortController = new AbortController();
+    if (!taskId) {
+      console.error('[connectProgress] taskId 为空，跳过连接');
+      return;
+    }
     
-    fetch(`/api/progress/${taskId}`, {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      console.error('[connectProgress] 未找到access_token');
+      return;
+    }
+
+    // 先关闭已存在的 SSE 连接
+    if (sseAbortControllerRef.current) {
+      console.log('[connectProgress] 关闭旧的SSE连接');
+      sseAbortControllerRef.current.abort();
+      sseAbortControllerRef.current = null;
+    }
+
+    console.log('[connectProgress] 连接任务进度流:', taskId);
+
+    const abortController = new AbortController();
+    sseAbortControllerRef.current = abortController;
+    const encodedTaskId = encodeURIComponent(taskId);
+
+    fetch(`/api/progress/${encodedTaskId}`, {
       headers: {
         'Authorization': `Bearer ${token}`,
       },
       signal: abortController.signal,
     })
       .then((response) => {
+        if (!response.ok) {
+          console.error('[connectProgress] SSE连接失败:', response.status);
+          return;
+        }
+        console.log('[connectProgress] SSE连接已建立');
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -158,7 +197,10 @@ export default function TaskManagement() {
 
         const readStream = () => {
           reader.read().then(({ done, value }) => {
-            if (done) return;
+            if (done) {
+              console.log('[connectProgress] 流读取完成');
+              return;
+            }
 
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
@@ -168,21 +210,39 @@ export default function TaskManagement() {
               if (line.startsWith('data: ')) {
                 try {
                   const data = JSON.parse(line.substring(6));
-                  if (data.type === 'output') {
-                    setProgress((prev) => [...prev, data.line]);
+                  console.log('[connectProgress] 收到事件:', data.type, data);
+                  if (data.type === 'connected') {
+                    setProgress((prev) => [...prev, `[系统] ${data.message || 'SSE连接已建立'}`]);
+                  } else if (data.type === 'output') {
+                    if (data.line) {
+                      setProgress((prev) => [...prev, data.line]);
+                    }
+                  } else if (data.type === 'progress') {
+                    const msg = data.message || `进度: ${JSON.stringify(data)}`;
+                    if (msg) setProgress((prev) => [...prev, msg]);
+                  } else if (data.type === 'result') {
+                    const msg = data.message || `结果: ${JSON.stringify(data)}`;
+                    if (msg) setProgress((prev) => [...prev, msg]);
                   } else if (data.type === 'finished') {
+                    console.log('[connectProgress] 任务完成, return_code:', data.return_code);
                     setTaskStatus(data.return_code === 0 ? 'finished' : 'error');
-                    abortController.abort();
+                    setProgress((prev) => [...prev, `[系统] 任务${data.return_code === 0 ? '完成' : '失败'}`]);
+                    sseAbortControllerRef.current = null;
+                  } else if (data.type === 'error') {
+                    console.error('[connectProgress] 任务错误:', data.line);
+                    setProgress((prev) => [...prev, `[错误] ${data.line}`]);
                   }
                 } catch (err) {
-                  console.error('解析进度数据失败:', err);
+                  console.error('解析进度数据失败:', err, 'line:', line);
                 }
               }
             }
 
             readStream();
-          }).catch(() => {
-            // 连接关闭
+          }).catch((err) => {
+            if (err.name !== 'AbortError') {
+              console.error('[connectProgress] 读取流失败:', err);
+            }
           });
         };
 
@@ -190,7 +250,7 @@ export default function TaskManagement() {
       })
       .catch((error) => {
         if (error.name !== 'AbortError') {
-          console.error('连接进度流失败:', error);
+          console.error('[connectProgress] 连接失败:', error);
         }
       });
   };
@@ -216,6 +276,14 @@ export default function TaskManagement() {
       }
 
       const result = await taskService.startTask(formData);
+      console.log('[handleSubmit] startTask 响应:', result);
+      
+      if (!result || !result.task_id) {
+        console.error('[handleSubmit] 响应中缺少 task_id:', result);
+        setError('启动任务失败：响应格式错误');
+        return;
+      }
+      
       setCurrentTaskId(result.task_id);
       setTaskStatus('running');
       setProgress([]);
@@ -224,7 +292,8 @@ export default function TaskManagement() {
       connectProgress(result.task_id);
       startProgressPolling(result.task_id);
     } catch (err: any) {
-      setError(err.response?.data?.error || '启动任务失败');
+      console.error('[handleSubmit] 启动任务出错:', err);
+      setError(err.response?.data?.error || err.message || '启动任务失败');
     } finally {
       setLoading(false);
     }
@@ -304,8 +373,8 @@ export default function TaskManagement() {
               >
                 <option value="">请选择数据文件...</option>
                 {dataFiles.map((file) => (
-                  <option key={file.id} value={file.path}>
-                    {file.name}
+                  <option key={file.id} value={`db://${file.id}`}>
+                    {file.filename || file.name}
                   </option>
                 ))}
               </select>
@@ -553,18 +622,18 @@ export default function TaskManagement() {
               <p>暂无任务运行，请配置参数后启动任务</p>
             </div>
           ) : (
-            progress.map((line, index) => (
+            progress.filter(line => line != null && line !== undefined).map((line, index) => (
               <div
                 key={index}
                 className={`mb-1 ${
-                  line.includes('ERROR') || line.includes('错误')
+                  line?.includes('ERROR') || line?.includes('错误')
                     ? 'text-red-400'
-                    : line.includes('SUCCESS') || line.includes('成功')
+                    : line?.includes('SUCCESS') || line?.includes('成功')
                     ? 'text-green-400'
                     : 'text-gray-300'
                 }`}
               >
-                {line}
+                {line || ''}
               </div>
             ))
           )}

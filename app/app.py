@@ -59,6 +59,11 @@ app.add_middleware(
 # 初始化数据库
 init_database()
 
+
+# ========== 应用启动事件 ==========
+
+# Stream方案的启动/停止事件已移除，改用抢占槽位方案
+
 # 注册所有路由
 app.include_router(auth_routes.router)
 app.include_router(data_file_routes.router)

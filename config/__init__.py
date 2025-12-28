@@ -161,3 +161,4 @@ def get_default_model() -> str:
     """获取默认模型路径"""
     return get_config('model_services.default_model', '/data/models/Qwen3-32B')
 
+

@@ -17,6 +17,8 @@ from datetime import datetime
 # 存储运行中的任务
 running_tasks = {}
 running_tasks_lock = RLock()
+# 存储清理任务的定时器
+_cleanup_timers = {}
 
 
 def _update_task_status_in_db(task_id: str, return_code: int = None, status: str = None):
@@ -189,6 +191,9 @@ def run_main_py(params, task_id):
             task_id=task_id,
             return_code=process.returncode
         )
+        
+        # 启动延迟清理任务（5分钟后自动清理）
+        _schedule_cleanup(task_id, delay=300)
 
 
 def create_task(task_id, params):
@@ -261,7 +266,41 @@ def stop_task(task_id):
     # 更新数据库中的任务状态为 'stopped'
     _update_task_status_in_db(task_id=task_id, status='stopped')
     
+    # 取消之前的清理定时器（如果存在），启动新的清理
+    if task_id in _cleanup_timers:
+        _cleanup_timers[task_id].cancel()
+    _schedule_cleanup(task_id, delay=300)
+    
     return True
+
+
+def _cleanup_task(task_id: str):
+    """清理已完成的任务，释放内存"""
+    with running_tasks_lock:
+        if task_id in running_tasks:
+            # 清理任务数据
+            del running_tasks[task_id]
+            # 清理清理定时器
+            if task_id in _cleanup_timers:
+                del _cleanup_timers[task_id]
+            print(f"[TaskManager] 任务已清理: {task_id}")
+
+
+def _schedule_cleanup(task_id: str, delay: int = 300):
+    """调度延迟清理任务"""
+    def cleanup_callback():
+        _cleanup_task(task_id)
+    
+    import threading
+    # 创建并启动清理定时器
+    timer = threading.Timer(delay, cleanup_callback)
+    timer.daemon = True
+    
+    with running_tasks_lock:
+        _cleanup_timers[task_id] = timer
+    
+    timer.start()
+    print(f"[TaskManager] 任务清理已调度: {task_id} (将在{delay}秒后清理)")
 
 
 def delete_task(task_id):
@@ -289,6 +328,11 @@ def delete_task(task_id):
         
         # 删除任务
         del running_tasks[task_id]
+        
+        # 取消清理定时器（如果存在）
+        if task_id in _cleanup_timers:
+            _cleanup_timers[task_id].cancel()
+            del _cleanup_timers[task_id]
         return True, None
 
 

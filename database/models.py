@@ -122,17 +122,69 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
     """初始化数据库，创建表"""
+    # 使用 create_all 创建所有表
+    # SQLAlchemy 会自动处理表已存在的情况
+    
+    # 检查数据库文件在创建前的状态
+    db_path = os.path.join(os.path.dirname(__file__), 'app.db')
+    print(f"📂 init_db - 数据库路径: {db_path}")
+    print(f"📂 init_db - 数据库文件存在: {os.path.exists(db_path)}")
+    
+    # 执行创建
     Base.metadata.create_all(bind=engine)
+    
+    # 检查创建后的状态
+    print(f"📂 init_db - create_all 后数据库文件存在: {os.path.exists(db_path)}")
+    if os.path.exists(db_path):
+        print(f"📊 init_db - 数据库文件大小: {os.path.getsize(db_path)} 字节")
+    else:
+        print("⚠️  init_db - 警告: 数据库文件仍未创建！")
+    
+    print("📊 SQLAlchemy create_all 已执行")
 
 
 def verify_and_create_columns():
     """
     核查数据库所有必需的字段，如果不存在则创建
     用于数据库升级和字段迁移
+    
+    如果数据库文件丢失或损坏，会自动重新创建所有表结构
     """
     from sqlalchemy import inspect, text
     
-    inspector = inspect(engine)
+    # 首先确保数据库文件存在（SQLite 会自动创建，但我们需要确保它能正常工作）
+    db_path = os.path.join(os.path.dirname(__file__), 'app.db')
+    if not os.path.exists(db_path):
+        print(f"⚠️  数据库文件不存在: {db_path}")
+        print(f"🔄 创建新的数据库文件...")
+        # 触发创建空数据库文件
+        with open(db_path, 'wb') as f:
+            pass
+    
+    # 检查数据库文件是否为空或损坏
+    is_corrupted = False
+    try:
+        # 尝试连接数据库
+        inspector = inspect(engine)
+        existing_tables = inspector.get_table_names()
+        print(f"📊 当前数据库包含 {len(existing_tables)} 个表")
+        
+        # 如果没有任何表，说明需要创建
+        if len(existing_tables) == 0:
+            print(f"⚠️  数据库为空，需要创建表结构")
+            is_corrupted = True
+    except Exception as e:
+        print(f"❌ 数据库访问失败: {e}")
+        is_corrupted = True
+    
+    # 如果数据库为空或损坏，先创建所有表
+    if is_corrupted:
+        print(f"🔄 重新创建数据库表结构...")
+        init_db()
+        # 重新获取 inspector，因为表已经创建了
+        inspector = inspect(engine)
+        existing_tables = inspector.get_table_names()
+        print(f"✅ 数据库表结构已创建，包含 {len(existing_tables)} 个表")
     
     # 定义所有表的必需字段
     required_columns = {
@@ -199,13 +251,27 @@ def verify_and_create_columns():
         ],
     }
     
+    # 检查是否有任何表不存在，如果表不存在则重新创建所有表
+    tables_to_create = []
+    for table_name in required_columns.keys():
+        if not inspector.has_table(table_name):
+            tables_to_create.append(table_name)
+    
+    if tables_to_create:
+        print(f"⚠️  检测到缺失的表: {', '.join(tables_to_create)}")
+        print(f"🔄 正在重新创建所有表结构...")
+        init_db()
+        print("✅ 表结构已重新创建")
+        # 重新检查表（因为表已经创建了）
+        inspector = inspect(engine)
+    
     db = SessionLocal()
     try:
         # 检查每个表的字段
         for table_name, columns in required_columns.items():
-            # 检查表是否存在
+            # 跳过不存在的表（应该不会走到这里，因为上面已经创建了）
             if not inspector.has_table(table_name):
-                print(f"⚠️  表 {table_name} 不存在，将通过 create_all 创建")
+                print(f"⚠️  警告: 表 {table_name} 仍然不存在")
                 continue
             
             # 获取现有字段

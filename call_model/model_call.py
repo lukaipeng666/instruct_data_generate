@@ -26,16 +26,16 @@ def call_model_via_proxy(
     # 从统一配置模块读取后端配置
     web_config = get_web_config()
     redis_config = get_redis_config()
-    
+
     backend_host = web_config['host']
     backend_port = web_config['port']
-    
+
     # 如果host是0.0.0.0，使用localhost
     if backend_host == '0.0.0.0':
         backend_host = 'localhost'
-    
+
     backend_url = f"http://{backend_host}:{backend_port}/api/model-call"
-    
+
     payload = {
         "api_url": api_url,
         "api_key": api_key,
@@ -48,26 +48,33 @@ def call_model_via_proxy(
         "top_p": top_p,
         "retry_times": retry_times
     }
-    
+
     # 计算请求超时时间：max_wait_time + 实际调用timeout + 缓冲
     max_wait_time = redis_config['max_wait_time']
     request_timeout = max_wait_time + timeout + 60  # 添加60秒缓冲
-    
+
+    # 获取内部API密钥
+    import os
+    internal_api_key = os.getenv("INTERNAL_API_KEY", "gen-internal-api-key-2024")
+
     try:
         response = requests.post(
             backend_url,
             json=payload,
             timeout=request_timeout,
-            headers={"Content-Type": "application/json"}
+            headers={
+                "Content-Type": "application/json",
+                "X-Internal-API-Key": internal_api_key
+            }
         )
         response.raise_for_status()
-        
+
         result = response.json()
         if result.get("success"):
             return result.get("content", "")
         else:
             return f"模型调用失败: {result.get('error', '未知错误')}"
-    
+
     except requests.exceptions.ConnectionError as e:
         return f"后端代理不可用: {str(e)}"
     except Exception as e:
