@@ -43,6 +43,9 @@ func (h *ReportHandler) ListReports(c *gin.Context) {
 			dataCount = 0
 		}
 
+		// 获取已确认数据条数
+		confirmedCount, _ := h.generatedDataRepo.GetConfirmedCount(task.TaskID)
+
 		// 解析参数
 		var params interface{}
 		if task.Params != nil {
@@ -50,15 +53,17 @@ func (h *ReportHandler) ListReports(c *gin.Context) {
 		}
 
 		reports = append(reports, map[string]interface{}{
-			"id":            task.ID,
-			"task_id":       task.TaskID,
-			"status":        task.Status,
-			"started_at":    task.StartedAt,
-			"finished_at":   task.FinishedAt,
-			"data_count":    int(dataCount),
-			"has_data":      dataCount > 0,
-			"params":        params,
-			"error_message": task.ErrorMessage,
+			"id":               task.ID,
+			"task_id":          task.TaskID,
+			"status":           task.Status,
+			"started_at":       task.StartedAt,
+			"finished_at":      task.FinishedAt,
+			"data_count":       int(dataCount),
+			"has_data":         dataCount > 0,
+			"confirmed_count":  int(confirmedCount),
+			"is_fully_reviewed": dataCount > 0 && confirmedCount == dataCount,
+			"params":           params,
+			"error_message":    task.ErrorMessage,
 		})
 	}
 

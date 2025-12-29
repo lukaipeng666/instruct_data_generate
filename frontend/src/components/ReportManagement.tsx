@@ -229,7 +229,15 @@ export default function ReportManagement() {
                       />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-mono font-medium text-gray-900">{report.task_id}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-sm font-mono font-medium text-gray-900">{report.task_id}</div>
+                        {report.is_fully_reviewed && (
+                          <span className="w-3 h-3 bg-green-500 rounded-full flex-shrink-0" title="已全部确认" />
+                        )}
+                        {!report.is_fully_reviewed && report.confirmed_count && report.confirmed_count > 0 && (
+                          <span className="w-3 h-3 bg-yellow-500 rounded-full flex-shrink-0" title={`已确认 ${report.confirmed_count}/${report.data_count} 条`} />
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {getStatusBadge(report.status)}

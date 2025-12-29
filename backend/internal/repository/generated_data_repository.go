@@ -122,6 +122,13 @@ func (r *GeneratedDataRepository) GetUnconfirmedCount(taskID string) (int64, err
 	return count, err
 }
 
+// GetConfirmedCount 获取已确认数据数量
+func (r *GeneratedDataRepository) GetConfirmedCount(taskID string) (int64, error) {
+	var count int64
+	err := r.db.Model(&models.GeneratedData{}).Where("task_id = ? AND is_confirmed = ?", taskID, true).Count(&count).Error
+	return count, err
+}
+
 // ConfirmBatch 批量确认数据
 func (r *GeneratedDataRepository) ConfirmBatch(ids []uint) error {
 	return r.db.Model(&models.GeneratedData{}).Where("id IN ?", ids).Update("is_confirmed", true).Error

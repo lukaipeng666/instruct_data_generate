@@ -64,7 +64,7 @@ func SetupRouter(
 	modelHandler := handler.NewModelHandler(modelService)
 	generatedDataHandler := handler.NewGeneratedDataHandler(generatedDataService)
 	reportHandler := handler.NewReportHandler(generatedDataRepo, taskRepo)
-	adminHandler := handler.NewAdminHandler(userRepo, taskRepo, modelService)
+	adminHandler := handler.NewAdminHandler(userRepo, taskRepo, generatedDataRepo, generatedDataService, modelService)
 	fileConversionHandler := handler.NewFileConversionHandler()
 
 	// API路由组

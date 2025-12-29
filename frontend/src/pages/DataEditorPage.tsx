@@ -619,17 +619,20 @@ export default function DataEditorPage() {
                   className="flex-1 px-3 py-3 text-left"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-700">
+                    <span className="text-xs font-medium text-gray-700 mr-1">
                       #{index + 1}
                     </span>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 flex-1">
                       {item.isEdited && (
-                        <span className="px-2 py-0.5 text-xs bg-yellow-100 text-yellow-700 rounded">
+                        <span className="px-1.5 py-0.5 text-xs bg-yellow-100 text-yellow-700 rounded whitespace-nowrap">
                           已编辑
                         </span>
                       )}
                       {item.is_confirmed && (
-                        <span className="w-3 h-3 bg-green-500 rounded-full" title="已确认" />
+                        <span className="px-1.5 py-0.5 text-xs bg-green-100 text-green-700 rounded flex items-center gap-0.5 whitespace-nowrap">
+                          <span className="w-1.5 h-1.5 bg-green-500 rounded-full flex-shrink-0"></span>
+                          已确认
+                        </span>
                       )}
                     </div>
                   </div>
