@@ -1,0 +1,50 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+backend/server
+go.sum
+go.mod
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+backend/database/
+
+# Logs
+log/
+*.log
+*.pid
+
+# Node.js
+node_modules/
+dist/
+build/
+*.local
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+
