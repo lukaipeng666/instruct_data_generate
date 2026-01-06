@@ -240,6 +240,12 @@ func (s *ModelService) CallModel(req *dto.ModelCallProxyRequest) (*dto.ModelCall
 	reqBody["temperature"] = req.Temperature
 	reqBody["top_p"] = req.TopP
 
+	// 计算输入字符数（实际字符数，按UTF-8计算）
+	inputChars := 0
+	for _, msg := range req.Messages {
+		inputChars += len([]rune(msg.Content))
+	}
+
 	// 转换请求体为JSON
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
@@ -322,9 +328,32 @@ func (s *ModelService) CallModel(req *dto.ModelCallProxyRequest) (*dto.ModelCall
 
 	content := result.Choices[0].Message.Content
 
+	// 计算输出字符数（实际字符数，按UTF-8计算）
+	outputChars := len([]rune(content))
+
+	// 如果提供了task_id，则累加字符数到Redis
+	if req.TaskID != "" {
+		go func() {
+			redisKey := fmt.Sprintf("task_progress:%s", req.TaskID)
+			// 使用HINCRBY累加字符数到Redis哈希表中
+			pipe := s.redisClient.Pipeline()
+			pipe.HIncrBy(ctx, redisKey, "input_chars", int64(inputChars))
+			pipe.HIncrBy(ctx, redisKey, "output_chars", int64(outputChars))
+			pipe.Expire(ctx, redisKey, 24*time.Hour)
+			_, err := pipe.Exec(ctx)
+			if err != nil {
+				log.Printf("[CallModel] 更新Redis字符数失败: %v", err)
+			} else {
+				log.Printf("[CallModel] 任务 %s 字符数更新: input=%d, output=%d", req.TaskID, inputChars, outputChars)
+			}
+		}()
+	}
+
 	return &dto.ModelCallProxyResponse{
-		Success: true,
-		Content: content,
+		Success:     true,
+		Content:     content,
+		InputChars:  inputChars,
+		OutputChars: outputChars,
 	}, nil
 }
 

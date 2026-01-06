@@ -2,18 +2,18 @@ package dto
 
 // GeneratedDataResponse 生成数据响应
 type GeneratedDataResponse struct {
-	ID              uint    `json:"id"`
-	TaskID          string  `json:"task_id"`
-	UserID          uint    `json:"user_id"`
-	DataContent     string  `json:"data_content"`
+	ID              uint     `json:"id"`
+	TaskID          string   `json:"task_id"`
+	UserID          uint     `json:"user_id"`
+	DataContent     string   `json:"data_content"`
 	ModelScore      *float64 `json:"model_score"`
-	RuleScore       *int    `json:"rule_score"`
-	RetryCount      int     `json:"retry_count"`
-	GenerationModel string  `json:"generation_model"`
-	TaskType        string  `json:"task_type"`
-	IsConfirmed     bool    `json:"is_confirmed"`
-	CreatedAt       string  `json:"created_at"`
-	UpdatedAt       string  `json:"updated_at"`
+	RuleScore       *int     `json:"rule_score"`
+	RetryCount      int      `json:"retry_count"`
+	GenerationModel string   `json:"generation_model"`
+	TaskType        string   `json:"task_type"`
+	IsConfirmed     bool     `json:"is_confirmed"`
+	CreatedAt       string   `json:"created_at"`
+	UpdatedAt       string   `json:"updated_at"`
 }
 
 // UpdateGeneratedDataRequest 更新生成数据请求
@@ -40,10 +40,20 @@ type ConfirmDataRequest struct {
 	IsConfirmed bool `json:"is_confirmed"`
 }
 
+// AddGeneratedDataRequest 添加生成数据请求
+type AddGeneratedDataRequest struct {
+	Content map[string]interface{} `json:"content" binding:"required"`
+}
+
+// BatchDeleteGeneratedDataRequest 批量删除生成数据请求
+type BatchDeleteGeneratedDataRequest struct {
+	DataIDs []uint `json:"data_ids" binding:"required"`
+}
+
 // ExportRequest 导出请求
 type ExportRequest struct {
-	TaskID     string   `json:"task_id"`
-	Confirmed  bool     `json:"confirmed"`
-	Format     string   `json:"format" binding:"required,oneof=jsonl csv"`
-	DataIDs    []uint   `json:"data_ids"`
+	TaskID    string `json:"task_id"`
+	Confirmed bool   `json:"confirmed"`
+	Format    string `json:"format" binding:"required,oneof=jsonl csv"`
+	DataIDs   []uint `json:"data_ids"`
 }

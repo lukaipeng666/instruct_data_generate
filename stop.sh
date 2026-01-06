@@ -83,7 +83,7 @@ get_backend_port() {
 import yaml
 with open('config/config.yaml', 'r') as f:
     config = yaml.safe_load(f)
-web_config = config.get('web_service', {})
+web_config = config.get('server', {})
 print(web_config.get('port', 18080))
 " 2>/dev/null
 }

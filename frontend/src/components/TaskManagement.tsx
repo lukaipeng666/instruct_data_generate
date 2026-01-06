@@ -13,6 +13,8 @@ interface TaskProgressData {
   progress_percent: number;
   completion_percent?: number;
   source: string;
+  input_chars?: number;
+  output_chars?: number;
 }
 
 export default function TaskManagement() {
@@ -586,6 +588,30 @@ export default function TaskManagement() {
                 </span>
               )}
             </div>
+            {/* 字符消耗统计 */}
+            <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+              <div className="text-xs text-gray-500 mb-1">字符消耗统计</div>
+              <div className="flex gap-6">
+                <div>
+                  <div className="text-lg font-semibold text-gray-800">
+                    {(taskProgress.input_chars || 0).toLocaleString()}
+                  </div>
+                  <div className="text-xs text-gray-500">输入字符</div>
+                </div>
+                <div>
+                  <div className="text-lg font-semibold text-gray-800">
+                    {(taskProgress.output_chars || 0).toLocaleString()}
+                  </div>
+                  <div className="text-xs text-gray-500">输出字符</div>
+                </div>
+                <div>
+                  <div className="text-lg font-semibold text-indigo-600">
+                    {((taskProgress.input_chars || 0) + (taskProgress.output_chars || 0)).toLocaleString()}
+                  </div>
+                  <div className="text-xs text-gray-500">总计字符</div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
         
@@ -612,6 +638,30 @@ export default function TaskManagement() {
             </div>
             <div className="mt-2 text-xs text-gray-500">
               共生成 {taskProgress.generated_count} 条数据
+            </div>
+            {/* 字符消耗统计 */}
+            <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+              <div className="text-xs text-gray-500 mb-1">字符消耗统计</div>
+              <div className="flex gap-6">
+                <div>
+                  <div className="text-lg font-semibold text-gray-800">
+                    {(taskProgress.input_chars || 0).toLocaleString()}
+                  </div>
+                  <div className="text-xs text-gray-500">输入字符</div>
+                </div>
+                <div>
+                  <div className="text-lg font-semibold text-gray-800">
+                    {(taskProgress.output_chars || 0).toLocaleString()}
+                  </div>
+                  <div className="text-xs text-gray-500">输出字符</div>
+                </div>
+                <div>
+                  <div className="text-lg font-semibold text-indigo-600">
+                    {((taskProgress.input_chars || 0) + (taskProgress.output_chars || 0)).toLocaleString()}
+                  </div>
+                  <div className="text-xs text-gray-500">总计字符</div>
+                </div>
+              </div>
             </div>
           </div>
         )}

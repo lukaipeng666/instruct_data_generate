@@ -166,23 +166,16 @@ def _evaluate_general_format(answer: str) -> int:
     if any(phrase in answer.lower() for phrase in ['以上是', '根据', '分析如下', '总结']):
         score -= 2
     
-    # 尝试抽取可能的字典/列表结构（包含花括号或方括号的部分）
-    if '{' in answer or '}' in answer or '[' in answer or ']' in answer:
-        # 使用正则匹配可能的字典/列表结构
-        pattern = r'(\{.*?\}|\[.*?\])'
-        matches = re.findall(pattern, answer, re.DOTALL)
-        
-        if matches:
-            # 尝试解析抽取到的结构
-            parse_failed = False
-            for match in matches:
-                try:
-                    json.loads(match)
-                except:
-                    parse_failed = True
-                    break
-            if parse_failed:
-                score -= 5  # 能抽取结构但解析失败扣分
+    # 检查开头和结尾是否包含字典/列表的符号
+    answer_stripped = answer.strip()
+    if ((answer_stripped.startswith('{') and answer_stripped.endswith('}')) or
+        (answer_stripped.startswith('[') and answer_stripped.endswith(']'))):
+        # 尝试直接解析整个内容
+        try:
+            json.loads(answer_stripped)
+        except:
+            print(f"解析失败: {answer_stripped}")
+            score -= 5  # 开头结尾符合格式但解析失败扣分
     
     return max(0, score)
 

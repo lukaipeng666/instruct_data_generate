@@ -108,6 +108,8 @@ func (h *AdminHandler) GetUserReports(c *gin.Context) {
 			"has_data":         dataCount > 0,
 			"confirmed_count":  int(confirmedCount),
 			"is_fully_reviewed": dataCount > 0 && confirmedCount == dataCount,
+			"input_chars":       task.InputChars,
+			"output_chars":      task.OutputChars,
 			"params":           params,
 			"error_message":    task.ErrorMessage,
 		})

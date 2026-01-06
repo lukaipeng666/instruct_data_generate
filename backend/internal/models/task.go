@@ -8,18 +8,20 @@ import (
 
 // Task 任务模型
 type Task struct {
-	ID           uint        `gorm:"primarykey" json:"id"`
-	TaskID       string      `gorm:"uniqueIndex;size:100;not null" json:"task_id"`
-	UserID       uint        `gorm:"not null;index" json:"user_id"`
-	Status       string      `gorm:"size:20;default:'running'" json:"status"` // running, finished, error, stopped
-	Params       JSONMap     `gorm:"type:text" json:"params"`
-	Result       JSONMap     `gorm:"type:text" json:"result"`
-	ErrorMessage string      `gorm:"type:text" json:"error_message"`
-	StartedAt    time.Time   `json:"started_at"`
-	FinishedAt   *time.Time  `json:"finished_at"`
+	ID           uint       `gorm:"primarykey" json:"id"`
+	TaskID       string     `gorm:"uniqueIndex;size:100;not null" json:"task_id"`
+	UserID       uint       `gorm:"not null;index" json:"user_id"`
+	Status       string     `gorm:"size:20;default:'running'" json:"status"` // running, finished, error, stopped
+	Params       JSONMap    `gorm:"type:text" json:"params"`
+	Result       JSONMap    `gorm:"type:text" json:"result"`
+	ErrorMessage string     `gorm:"type:text" json:"error_message"`
+	StartedAt    time.Time  `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at"`
+	InputChars   int64      `gorm:"default:0" json:"input_chars"`  // 输入字符总数
+	OutputChars  int64      `gorm:"default:0" json:"output_chars"` // 输出字符总数
 
 	// 关联
-	User          User           `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	User          User            `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	GeneratedData []GeneratedData `gorm:"foreignKey:TaskID;references:TaskID" json:"generated_data,omitempty"`
 }
 

@@ -23,7 +23,7 @@ print(redis_config.get('host', 'localhost'))
 print(redis_config.get('port', 16379))
 
 # Web 服务配置
-web_config = config.get('web_service', {})
+web_config = config.get('server', {})
 print(web_config.get('host', '0.0.0.0'))
 print(web_config.get('port', 18080))
 
@@ -143,14 +143,24 @@ echo "启动 Go 后端服务..."
 nohup ./backend/server > log/go_backend.log 2>&1 &
 GO_PID=$!
 echo $GO_PID > log/go_backend.pid
-sleep 2
 
-# 验证后端是否启动成功
-if curl -s "http://localhost:$BACKEND_PORT" > /dev/null 2>&1; then
-    echo "✅ Go 后端已启动 (PID: $GO_PID, 端口: $BACKEND_PORT)"
-else
+# 等待后端启动（增加等待时间并使用重试机制）
+echo "等待后端服务启动..."
+MAX_RETRIES=10
+RETRY_COUNT=0
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    if curl -s "http://localhost:$BACKEND_PORT/api/me" > /dev/null 2>&1; then
+        echo "✅ Go 后端已启动 (PID: $GO_PID, 端口: $BACKEND_PORT)"
+        break
+    fi
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    echo "等待中... ($RETRY_COUNT/$MAX_RETRIES)"
+    sleep 1
+done
+
+if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
     echo "❌ Go 后端启动失败，请检查日志: log/go_backend.log"
-    cat log/go_backend.log | tail -20
+    cat log/go_backend.log | tail -30
     exit 1
 fi
 
@@ -181,9 +191,14 @@ if [ ! -d "node_modules" ]; then
     npm install
 fi
 
+# 确保 @types/node 已安装
+echo "检查并安装 TypeScript 类型定义..."
+npm install --save-dev @types/node || echo "⚠️ @types/node 安装失败，可能需要手动检查"
+
 # 启动前端开发服务器
 echo "启动前端开发服务器..."
-nohup npm run dev -- --port "$FRONTEND_PORT" --host > ../log/frontend.log 2>&1 &
+BACKEND_URL="http://localhost:$BACKEND_PORT"
+nohup env VITE_BACKEND_PROXY_URL="$BACKEND_URL" npm run dev -- --port "$FRONTEND_PORT" --host > ../log/frontend.log 2>&1 &
 FRONTEND_PID=$!
 echo $FRONTEND_PID > ../log/frontend.pid
 cd ..

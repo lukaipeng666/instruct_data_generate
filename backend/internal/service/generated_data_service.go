@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"gen-go/internal/dto"
+	"gen-go/internal/models"
 	"gen-go/internal/repository"
 	"gen-go/internal/utils"
 )
@@ -113,14 +114,15 @@ func (s *GeneratedDataService) ExportData(taskID string, format string) ([]byte,
 	}
 
 	if format == "csv" {
-		// 转换为CSV
-		var allData []map[string]interface{}
+		// 将所有JSONL数据合并为一个字符串，然后使用正确的对话格式转换为CSV
+		var jsonlData []byte
 		for _, data := range dataList {
-			var item map[string]interface{}
-			json.Unmarshal([]byte(data.DataContent), &item)
-			allData = append(allData, item)
+			jsonlData = append(jsonlData, []byte(data.DataContent)...)
+			jsonlData = append(jsonlData, '\n')
 		}
-		csvContent, err := utils.ConvertToCSV(allData)
+
+		// 使用专门的 JSONL 到 CSV 转换方法（支持 meta、Human、Assistant 格式）
+		csvContent, err := utils.ConvertJSONLToCSV(jsonlData)
 		if err != nil {
 			return nil, "", err
 		}
@@ -139,7 +141,7 @@ func (s *GeneratedDataService) ExportData(taskID string, format string) ([]byte,
 }
 
 // DeleteBatch 批量删除数据
-func (s *GeneratedDataService) DeleteBatch(ids []uint) error {
+func (s *GeneratedDataService) DeleteBatch(ids []uint) (int64, error) {
 	return s.generatedDataRepo.DeleteByIDs(ids)
 }
 
@@ -155,10 +157,36 @@ func (s *GeneratedDataService) GetTaskInfo(taskID string) (map[string]interface{
 	unconfirmed, _ := s.generatedDataRepo.GetUnconfirmedCount(taskID)
 
 	return map[string]interface{}{
-		"task_id":         taskID,
-		"total_count":     total,
+		"task_id":           taskID,
+		"total_count":       total,
 		"unconfirmed_count": unconfirmed,
-		"confirmed_count": total - unconfirmed,
-		"sample":          dataList,
+		"confirmed_count":   total - unconfirmed,
+		"sample":            dataList,
 	}, nil
+}
+
+// AddData 添加单条数据
+func (s *GeneratedDataService) AddData(taskID string, userID uint, content map[string]interface{}) (uint, error) {
+	// 将 content 转换为 JSON 字符串
+	contentJSON, err := json.Marshal(content)
+	if err != nil {
+		return 0, err
+	}
+
+	data := &models.GeneratedData{
+		TaskID:          taskID,
+		UserID:          userID,
+		DataContent:     string(contentJSON),
+		IsConfirmed:     false,
+		RetryCount:      0,
+		TaskType:        "manual", // 手动添加的数据
+		GenerationModel: "manual", // 手动添加的数据
+	}
+
+	err = s.generatedDataRepo.Create(data)
+	if err != nil {
+		return 0, err
+	}
+
+	return data.ID, nil
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"gen-go/internal/dto"
@@ -148,7 +149,10 @@ func (h *TaskHandler) StopTask(c *gin.Context) {
 	userID, _ := middleware.GetUserID(c)
 	taskID := c.Param("task_id")
 
+	log.Printf("[StopTask Handler] 收到停止任务请求: taskID=%s, userID=%d", taskID, userID)
+
 	if err := h.taskManager.StopTask(taskID, userID); err != nil {
+		log.Printf("[StopTask Handler] 停止任务失败: %v", err)
 		utils.InternalError(c, err.Error())
 		return
 	}
@@ -262,6 +266,65 @@ func (h *TaskHandler) GetProgressUnified(c *gin.Context) {
 	ctx := context.Background()
 	redisKey := "task_progress:" + taskID
 
+	// 先尝试从Redis Hash中读取（支持字符数统计）
+	hashData, hashErr := h.redisClient.HGetAll(ctx, redisKey).Result()
+
+	if hashErr == nil && len(hashData) > 0 {
+		// Hash数据存在，使用Hash数据
+		progressData := make(map[string]interface{})
+
+		// 转换所有字段
+		for key, val := range hashData {
+			// 尝试解析为JSON值
+			var jsonVal interface{}
+			if err := json.Unmarshal([]byte(val), &jsonVal); err == nil {
+				progressData[key] = jsonVal
+			} else {
+				// 如果不是JSON，尝试解析为数字
+				if intVal, err := strconv.ParseInt(val, 10, 64); err == nil {
+					progressData[key] = intVal
+				} else {
+					// 否则作为字符串
+					progressData[key] = val
+				}
+			}
+		}
+
+		// 确保有task_id字段
+		if _, ok := progressData["task_id"]; !ok {
+			progressData["task_id"] = taskID
+		}
+
+		// 计算进度百分比
+		progressPercent := 0.0
+		if cp, ok := progressData["completion_percent"].(float64); ok {
+			progressPercent = cp
+		} else {
+			// 回退：使用轮次计算进度
+			if totalRounds, ok := progressData["total_rounds"].(float64); ok && totalRounds > 0 {
+				if currentRound, ok := progressData["current_round"].(float64); ok {
+					progressPercent = (currentRound / totalRounds) * 100
+				}
+			}
+		}
+
+		// 确保进度不超过100%
+		if progressPercent > 100 {
+			progressPercent = 100
+		}
+
+		// 添加进度百分比到响应
+		progressData["progress_percent"] = progressPercent
+		progressData["source"] = "redis"
+
+		utils.SuccessResponse(c, gin.H{
+			"success":  true,
+			"progress": progressData,
+		})
+		return
+	}
+
+	// 如果Hash不存在，尝试读取字符串格式（兼容旧版本）
 	val, err := h.redisClient.Get(ctx, redisKey).Result()
 	if err != nil {
 		if err == redis.Nil {
@@ -311,7 +374,7 @@ func (h *TaskHandler) GetProgressUnified(c *gin.Context) {
 		return
 	}
 
-	// 解析JSON
+	// 解析JSON（字符串格式）
 	var progressData map[string]interface{}
 	if err := json.Unmarshal([]byte(val), &progressData); err != nil {
 		log.Printf("[GetProgressUnified] 解析进度数据失败: %v", err)

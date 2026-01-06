@@ -310,20 +310,21 @@ export default function DataEditorPage() {
   // 批量删除选中的数据
   const handleBatchDelete = async (indicesToDelete: number[]) => {
     if (indicesToDelete.length === 0) return;
-    
+
     if (indicesToDelete.length >= dataItems.length) {
       setError('不能删除所有数据，至少需要保留一条数据');
       return;
     }
-    
+
     // 获取要删除的数据 ID
     const dataIdsToDelete = indicesToDelete.map(i => dataItems[i].id);
-    
+
     try {
       setDeleting(true);
       setError('');
       const result = await reportService.batchDeleteGeneratedData(dataIdsToDelete);
-      setSuccess(`成功删除 ${result.deleted_count} 条数据`);
+      const deletedCount = result.deleted_count ?? result.deletedCount ?? 0;
+      setSuccess(`成功删除 ${deletedCount} 条数据`);
       setSelectedItems(new Set());
       setRangeStart('');
       setRangeEnd('');

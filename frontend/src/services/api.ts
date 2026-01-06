@@ -120,6 +120,8 @@ export const taskService = {
       progress_percent: number;
       completion_percent?: number;
       source: string;
+      input_chars?: number;
+      output_chars?: number;
     };
     error?: string;
   }> => {
@@ -608,16 +610,16 @@ export const reportService = {
   
   // 批量删除生成数据
   batchDeleteGeneratedData: async (dataIds: number[]): Promise<{ deleted_count: number }> => {
-    const response = await api.delete<{ success: boolean; deleted_count: number; message: string }>('/generated_data/batch', {
+    const response = await api.delete<{ code: number; message: string; data: { success: boolean; deleted_count: number } }>('/generated_data/batch', {
       data: { data_ids: dataIds }
     });
-    return { deleted_count: response.data.deleted_count };
+    return { deleted_count: response.data.data.deleted_count };
   },
   
   // 添加新的生成数据
   addGeneratedData: async (taskId: string, content: any): Promise<{ data_id: number }> => {
     const encodedTaskId = encodeURIComponent(taskId);
-    const response = await api.post<{ success: boolean; data_id: number; message: string }>(`/generated_data/${encodedTaskId}`, { content });
+    const response = await api.post<{ success: boolean; data_id: number; message: string }>(`/generated_data/add/${encodedTaskId}`, { content });
     return { data_id: response.data.data_id };
   },
   

@@ -36,20 +36,21 @@ type TaskManager struct {
 
 // TaskContext 任务上下文
 type TaskContext struct {
-	TaskID       string
-	UserID       uint
-	Status       string
-	Params       map[string]interface{}
-	FileID       uint
-	ModelConfig  *models.ModelConfig
-	ModelPath    string
-	APIServices  []string
-	StartTime    time.Time
-	EndTime      *time.Time
-	ReturnCode   *int
-	CancelFunc   context.CancelFunc
-	Progress     chan *dto.ProgressEvent
-	Finished     bool
+	TaskID           string
+	UserID           uint
+	Status           string
+	Params           map[string]interface{}
+	FileID           uint
+	ModelConfig      *models.ModelConfig
+	ModelPath        string
+	APIServices      []string
+	StartTime        time.Time
+	EndTime          *time.Time
+	ReturnCode       *int
+	CancelFunc       context.CancelFunc
+	Progress         chan *dto.ProgressEvent
+	Finished         bool
+	StoppedWithChars map[string]int64 // 停止时保存的字符数 {"input": xxx, "output": xxx}
 
 	// 用于广播的事件历史和订阅者管理
 	EventHistory     []*dto.ProgressEvent
@@ -153,7 +154,7 @@ func (tm *TaskManager) StartTask(userID uint, req *dto.StartTaskRequest) (*dto.S
 		modelPath = model.ModelPath
 		apiServices = []string{model.APIURL}
 		log.Printf("[StartTask] 使用数据库模型配置: %s, API: %s", model.Name, model.APIURL)
-	} else if req.Services != nil && len(req.Services) > 0 {
+	} else if len(req.Services) > 0 {
 		// 使用前端提供的服务地址列表
 		apiServices = req.Services
 		modelPath = req.Model
@@ -189,10 +190,12 @@ func (tm *TaskManager) StartTask(userID uint, req *dto.StartTaskRequest) (*dto.S
 
 	log.Printf("[StartTask] 文件验证成功: %s (大小: %d bytes)", file.Filename, file.FileSize)
 
-	// 生成任务ID
+	// 生成任务ID（使用rune安全截断UTF-8字符串）
 	taskIDBase := file.Filename
-	if len(taskIDBase) > 50 {
-		taskIDBase = taskIDBase[:50]
+	// 转换为rune切片来安全截断UTF-8字符
+	runes := []rune(taskIDBase)
+	if len(runes) > 50 {
+		taskIDBase = string(runes[:50])
 	}
 	taskID := tm.generateUniqueTaskID(taskIDBase)
 
@@ -228,11 +231,11 @@ func (tm *TaskManager) StartTask(userID uint, req *dto.StartTaskRequest) (*dto.S
 
 	// 创建数据库任务记录
 	task := &models.Task{
-		TaskID:       taskID,
-		UserID:       userID,
-		Status:       "running",
-		Params:       params,
-		StartedAt:    time.Now(),
+		TaskID:    taskID,
+		UserID:    userID,
+		Status:    "running",
+		Params:    params,
+		StartedAt: time.Now(),
 	}
 
 	if err := tm.taskRepo.Create(task); err != nil {
@@ -245,18 +248,19 @@ func (tm *TaskManager) StartTask(userID uint, req *dto.StartTaskRequest) (*dto.S
 	// 创建内存任务上下文
 	ctx, cancel := context.WithCancel(context.Background())
 	taskCtx := &TaskContext{
-		TaskID:      taskID,
-		UserID:      userID,
-		Status:      "running",
-		Params:      params,
-		FileID:      fileID,
-		ModelConfig: modelConfig,
-		ModelPath:   modelPath,
-		APIServices: apiServices,
-		StartTime:   time.Now(),
-		CancelFunc:  cancel,
-		Progress:    make(chan *dto.ProgressEvent, 100),
-		Finished:    false,
+		TaskID:           taskID,
+		UserID:           userID,
+		Status:           "running",
+		Params:           params,
+		FileID:           fileID,
+		ModelConfig:      modelConfig,
+		ModelPath:        modelPath,
+		APIServices:      apiServices,
+		StartTime:        time.Now(),
+		CancelFunc:       cancel,
+		Progress:         make(chan *dto.ProgressEvent, 100),
+		Finished:         false,
+		StoppedWithChars: nil,
 	}
 
 	tm.tasksLock.Lock()
@@ -280,6 +284,21 @@ func (tm *TaskManager) runTask(ctx context.Context, taskCtx *TaskContext) {
 	defer close(taskCtx.Progress)
 
 	log.Printf("[runTask] 任务 %s 开始执行", taskCtx.TaskID)
+
+	// 初始化Redis中的字符数字段为0
+	if tm.redisClient != nil {
+		redisKey := fmt.Sprintf("task_progress:%s", taskCtx.TaskID)
+		pipe := tm.redisClient.Pipeline()
+		pipe.HSet(ctx, redisKey, "input_chars", 0)
+		pipe.HSet(ctx, redisKey, "output_chars", 0)
+		pipe.Expire(ctx, redisKey, 24*time.Hour)
+		_, err := pipe.Exec(ctx)
+		if err != nil {
+			log.Printf("[runTask] 初始化Redis字符数失败: %v", err)
+		} else {
+			log.Printf("[runTask] 已初始化Redis字符数: task_id=%s", taskCtx.TaskID)
+		}
+	}
 
 	// 发送开始事件
 	taskCtx.AddEvent(&dto.ProgressEvent{
@@ -415,6 +434,32 @@ func (tm *TaskManager) runTask(ctx context.Context, taskCtx *TaskContext) {
 
 	log.Printf("[runTask] Python进程已结束，错误: %v", err)
 
+	// 检查任务是否已被停止（避免覆盖StopTask设置的字符数）
+	if taskCtx.Status == "stopped" && taskCtx.StoppedWithChars != nil {
+		// 任务已被停止，跳过数据库更新
+		log.Printf("[runTask] 任务已被停止,跳过数据库更新")
+		return
+	}
+
+	// 从Redis读取字符数
+	var inputChars, outputChars int64
+	if tm.redisClient != nil {
+		redisKey := fmt.Sprintf("task_progress:%s", taskCtx.TaskID)
+		ctx := context.Background()
+		hashData, hashErr := tm.redisClient.HGetAll(ctx, redisKey).Result()
+		if hashErr == nil {
+			if val, ok := hashData["input_chars"]; ok {
+				inputChars, _ = strconv.ParseInt(val, 10, 64)
+			}
+			if val, ok := hashData["output_chars"]; ok {
+				outputChars, _ = strconv.ParseInt(val, 10, 64)
+			}
+			log.Printf("[runTask] 从Redis读取字符数: input=%d, output=%d", inputChars, outputChars)
+		} else {
+			log.Printf("[runTask] 从Redis读取字符数失败: %v", hashErr)
+		}
+	}
+
 	// 标记任务完成
 	code := 0
 	if err != nil {
@@ -439,7 +484,8 @@ func (tm *TaskManager) runTask(ctx context.Context, taskCtx *TaskContext) {
 	}
 
 	log.Printf("[runTask] 更新任务状态为: %s", status)
-	tm.taskRepo.UpdateStatusWithTime(taskCtx.TaskID, status)
+	// 更新状态和字符数
+	tm.taskRepo.UpdateStatusWithTimeAndChars(taskCtx.TaskID, status, inputChars, outputChars)
 
 	// 发送完成事件
 	taskCtx.AddEvent(&dto.ProgressEvent{
@@ -469,7 +515,7 @@ func (tm *TaskManager) acquireModelToken(ctx context.Context, key string, maxCon
 	// 轮询等待令牌
 	startTime := time.Now()
 	retryInterval := 500 * time.Millisecond // 重试间隔500毫秒
-	maxRetryInterval := 5 * time.Second    // 最大重试间隔5秒
+	maxRetryInterval := 5 * time.Second     // 最大重试间隔5秒
 
 	for {
 		// 检查是否超过最大等待时间
@@ -666,18 +712,42 @@ func (tm *TaskManager) StopTask(taskID string, userID uint) error {
 			return fmt.Errorf("无权停止此任务")
 		}
 
+		// 从Redis读取字符数
+		var inputChars, outputChars int64
+		if tm.redisClient != nil {
+			redisKey := fmt.Sprintf("task_progress:%s", taskID)
+			ctx := context.Background()
+			hashData, hashErr := tm.redisClient.HGetAll(ctx, redisKey).Result()
+			if hashErr == nil {
+				if val, ok := hashData["input_chars"]; ok {
+					inputChars, _ = strconv.ParseInt(val, 10, 64)
+				}
+				if val, ok := hashData["output_chars"]; ok {
+					outputChars, _ = strconv.ParseInt(val, 10, 64)
+				}
+				log.Printf("[StopTask] 从Redis读取字符数: input=%d, output=%d", inputChars, outputChars)
+			} else {
+				log.Printf("[StopTask] 从Redis读取字符数失败: %v", hashErr)
+			}
+		}
+
 		// 取消任务
 		if taskCtx.CancelFunc != nil {
 			taskCtx.CancelFunc()
 		}
 
-		// 更新状态
+		// 更新状态并保存字符数到上下文
 		taskCtx.Status = "stopped"
 		taskCtx.Finished = true
 		code := -1
 		taskCtx.ReturnCode = &code
+		// 保存字符数到上下文，用于runTask检测
+		taskCtx.StoppedWithChars = map[string]int64{
+			"input":  inputChars,
+			"output": outputChars,
+		}
 
-		tm.taskRepo.UpdateStatusWithTime(taskID, "stopped")
+		tm.taskRepo.UpdateStatusWithTimeAndChars(taskID, "stopped", inputChars, outputChars)
 
 		// 清理Redis中的进度数据
 		tm.clearTaskProgress(taskID)
@@ -702,10 +772,29 @@ func (tm *TaskManager) StopTask(taskID string, userID uint) error {
 		return fmt.Errorf("任务状态为 %s，无法停止", task.Status)
 	}
 
+	// 从Redis读取字符数
+	var inputChars, outputChars int64
+	if tm.redisClient != nil {
+		redisKey := fmt.Sprintf("task_progress:%s", taskID)
+		ctx := context.Background()
+		hashData, hashErr := tm.redisClient.HGetAll(ctx, redisKey).Result()
+		if hashErr == nil {
+			if val, ok := hashData["input_chars"]; ok {
+				inputChars, _ = strconv.ParseInt(val, 10, 64)
+			}
+			if val, ok := hashData["output_chars"]; ok {
+				outputChars, _ = strconv.ParseInt(val, 10, 64)
+			}
+			log.Printf("[StopTask] 从Redis读取字符数: input=%d, output=%d", inputChars, outputChars)
+		} else {
+			log.Printf("[StopTask] 从Redis读取字符数失败: %v", hashErr)
+		}
+	}
+
 	// 任务在内存中不存在，可能是Go后端重启导致的
 	// 此时Python进程可能已经失去了控制，直接更新数据库状态即可
 	log.Printf("[StopTask] 任务 %s 在内存中不存在（可能是后端重启），更新数据库状态为stopped", taskID)
-	tm.taskRepo.UpdateStatusWithTime(taskID, "stopped")
+	tm.taskRepo.UpdateStatusWithTimeAndChars(taskID, "stopped", inputChars, outputChars)
 
 	// 清理Redis中的进度数据
 	tm.clearTaskProgress(taskID)
@@ -826,4 +915,3 @@ func (tm *TaskManager) generateUniqueTaskID(base string) string {
 func (tm *TaskManager) GetTasksFromDB(userID uint) ([]*models.Task, error) {
 	return tm.taskRepo.GetByUserID(userID)
 }
-

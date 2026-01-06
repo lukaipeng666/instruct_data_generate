@@ -7,24 +7,22 @@ import (
 
 // Config 应用配置结构
 type Config struct {
-	Server     ServerConfig   `mapstructure:"server"`
-	Database   DatabaseConfig `mapstructure:"database"`
-	Redis      RedisConfig    `mapstructure:"redis_service"`
-	JWT        JWTConfig      `mapstructure:"jwt"`
-	Admin      AdminConfig    `mapstructure:"admin"`
-	CORS       CORSConfig     `mapstructure:"cors"`
-	Frontend   FrontendConfig `mapstructure:"frontend"`
-	Model      ModelConfig    `mapstructure:"model_services"`
+	Server      ServerConfig   `mapstructure:"server"`
+	Database    DatabaseConfig `mapstructure:"database"`
+	Redis       RedisConfig    `mapstructure:"redis_service"`
+	JWT         JWTConfig      `mapstructure:"jwt"`
+	Admin       AdminConfig    `mapstructure:"admin"`
+	CORS        CORSConfig     `mapstructure:"cors"`
+	Frontend    FrontendConfig `mapstructure:"frontend"`
+	Model       ModelConfig    `mapstructure:"model_services"`
 	ProjectRoot string         `mapstructure:"project_root"`
 }
 
 // GetModelServices 获取模型服务地址列表
 func (c *Config) GetModelServices() []string {
-	if len(c.Model.DefaultServices) > 0 {
-		return c.Model.DefaultServices
-	}
-	// 默认服务地址
-	return []string{"http://localhost:16466/v1"}
+	// 返回配置文件中的服务地址列表
+	// 如果为空，返回空切片，由调用方决定如何处理
+	return c.Model.DefaultServices
 }
 
 // ServerConfig 服务器配置

@@ -19,6 +19,7 @@ def call_model_via_proxy(
     is_vllm: bool = False,
     top_p: float = 1.0,
     retry_times: int = 3,
+    task_id: str = "",
 ) -> str:
     """
     通过后端代理调用模型API（带流量控制）
@@ -46,7 +47,8 @@ def call_model_via_proxy(
         "timeout": timeout,
         "is_vllm": is_vllm,
         "top_p": top_p,
-        "retry_times": retry_times
+        "retry_times": retry_times,
+        "task_id": task_id
     }
 
     # 计算请求超时时间：max_wait_time + 实际调用timeout + 缓冲
@@ -93,10 +95,11 @@ def call_model_api(
     is_vllm: bool = False,
     top_p: float = 1.0,
     use_proxy: bool = True,  # 保留参数以保持接口兼容性，但强制使用代理
+    task_id: str = "",
 ) -> str:
     """
     调用模型API的主入口（仅支持通过后端代理调用）
-    
+
     注意：use_proxy 参数已废弃，始终使用后端代理（带Redis流量控制）
     """
     # 强制使用后端代理（带Redis流量控制）
@@ -110,7 +113,8 @@ def call_model_api(
         timeout=timeout,
         is_vllm=is_vllm,
         top_p=top_p,
-        retry_times=retry_times
+        retry_times=retry_times,
+        task_id=task_id
     )
 
 # 以下函数已删除，不再支持直接调用模式：

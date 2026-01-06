@@ -82,11 +82,12 @@ func setDefaults(cfg *Config) {
 	if cfg.Database.Path == "" {
 		cfg.Database.Path = "./database/app.db"
 	}
-	if cfg.Redis.Host == "" {
-		cfg.Redis.Host = "localhost"
-	}
+	// Redis Host 必须从配置文件读取，不设置硬编码默认值
+	// if cfg.Redis.Host == "" {
+	// 	cfg.Redis.Host = "localhost"
+	// }
 	if cfg.Redis.Port == 0 {
-		cfg.Redis.Port = 16379
+		cfg.Redis.Port = 6379 // 标准 Redis 端口
 	}
 	if cfg.Redis.DefaultMaxConcurrency == 0 {
 		cfg.Redis.DefaultMaxConcurrency = 16
@@ -100,21 +101,24 @@ func setDefaults(cfg *Config) {
 	if cfg.Admin.Username == "" {
 		cfg.Admin.Username = "admin"
 	}
-	if len(cfg.CORS.Origins) == 0 {
-		cfg.CORS.Origins = []string{"http://localhost:13000"}
-	}
+	// CORS Origins 必须从配置文件读取，不设置硬编码默认值
+	// if len(cfg.CORS.Origins) == 0 {
+	// 	cfg.CORS.Origins = []string{"http://localhost:13000"}
+	// }
 	if cfg.CORS.AllowMethods == nil {
 		cfg.CORS.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
 	}
 	if cfg.CORS.AllowHeaders == nil {
 		cfg.CORS.AllowHeaders = []string{"*"}
 	}
-	if cfg.Frontend.URL == "" {
-		cfg.Frontend.URL = "http://localhost:13000"
-	}
-	if len(cfg.Model.DefaultServices) == 0 {
-		cfg.Model.DefaultServices = []string{"http://localhost:16466/v1"}
-	}
+	// Frontend URL 必须从配置文件读取，不设置硬编码默认值
+	// if cfg.Frontend.URL == "" {
+	// 	cfg.Frontend.URL = "http://localhost:13000"
+	// }
+	// Model Services 必须从配置文件读取，不设置硬编码默认值
+	// if len(cfg.Model.DefaultServices) == 0 {
+	// 	cfg.Model.DefaultServices = []string{"http://localhost:16466/v1"}
+	// }
 	if cfg.Model.DefaultModel == "" {
 		cfg.Model.DefaultModel = "/data/models/Qwen3-32B"
 	}

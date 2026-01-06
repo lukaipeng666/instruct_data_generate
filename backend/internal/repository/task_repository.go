@@ -132,3 +132,26 @@ func (r *TaskRepository) ExistsByTaskID(taskID string) (bool, error) {
 	err := r.db.Model(&models.Task{}).Where("task_id = ?", taskID).Count(&count).Error
 	return count > 0, err
 }
+
+// UpdateInputOutputChars 更新任务的输入输出字符数
+func (r *TaskRepository) UpdateInputOutputChars(taskID string, inputChars, outputChars int64) error {
+	return r.db.Model(&models.Task{}).Where("task_id = ?", taskID).Updates(map[string]interface{}{
+		"input_chars":  inputChars,
+		"output_chars": outputChars,
+	}).Error
+}
+
+// UpdateStatusWithTimeAndChars 更新任务状态、完成时间和字符数
+func (r *TaskRepository) UpdateStatusWithTimeAndChars(taskID string, status string, inputChars, outputChars int64) error {
+	updates := map[string]interface{}{
+		"status":      status,
+		"input_chars":  inputChars,
+		"output_chars": outputChars,
+	}
+
+	if status == "finished" || status == "error" || status == "stopped" {
+		updates["finished_at"] = time.Now()
+	}
+
+	return r.db.Model(&models.Task{}).Where("task_id = ?", taskID).Updates(updates).Error
+}

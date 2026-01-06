@@ -207,6 +207,9 @@ export default function ReportManagement() {
                     数据条数
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    字符消耗
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     开始时间
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -244,6 +247,31 @@ export default function ReportManagement() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-semibold text-blue-600">{report.data_count}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {(report.input_chars !== undefined || report.output_chars !== undefined) ? (
+                        <div className="text-xs space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-500">输入:</span>
+                            <span className="font-semibold text-gray-900">
+                              {(report.input_chars || 0).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-500">输出:</span>
+                            <span className="font-semibold text-gray-900">
+                              {(report.output_chars || 0).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-indigo-600 font-semibold">
+                              总计: {((report.input_chars || 0) + (report.output_chars || 0)).toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-400">-</div>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-500">{formatDate(report.started_at)}</div>

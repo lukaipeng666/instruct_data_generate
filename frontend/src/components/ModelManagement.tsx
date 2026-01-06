@@ -278,7 +278,7 @@ export default function ModelManagement() {
                   value={formData.api_url}
                   onChange={(e) => setFormData({ ...formData, api_url: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="http://localhost:16466/v1"
+                  placeholder={import.meta.env.VITE_DEFAULT_MODEL_SERVICE || "http://localhost:16466/v1"}
                   required
                 />
               </div>

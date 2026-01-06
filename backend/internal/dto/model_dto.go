@@ -53,10 +53,10 @@ type ModelConfigResponse struct {
 
 // ModelCallRequest 模型调用请求
 type ModelCallRequest struct {
-	Messages []Message `json:"messages" binding:"required"`
-	MaxTokens int      `json:"max_tokens"`
-	Temperature float64 `json:"temperature"`
-	TopP     float64 `json:"top_p"`
+	Messages    []Message `json:"messages" binding:"required"`
+	MaxTokens   int       `json:"max_tokens"`
+	Temperature float64   `json:"temperature"`
+	TopP        float64   `json:"top_p"`
 }
 
 // Message 消息
@@ -96,13 +96,16 @@ type ModelCallProxyRequest struct {
 	IsVLLM      bool      `json:"is_vllm"`
 	TopP        float64   `json:"top_p"`
 	RetryTimes  int       `json:"retry_times"`
+	TaskID      string    `json:"task_id,omitempty"`
 }
 
 // ModelCallProxyResponse 模型调用代理响应（返回给Python后端）
 type ModelCallProxyResponse struct {
-	Success bool   `json:"success"`
-	Content string `json:"content,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Success     bool   `json:"success"`
+	Content     string `json:"content,omitempty"`
+	Error       string `json:"error,omitempty"`
+	InputChars  int    `json:"input_chars,omitempty"`
+	OutputChars int    `json:"output_chars,omitempty"`
 }
 
 // VLLMRequest vLLM API请求格式

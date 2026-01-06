@@ -58,8 +58,12 @@ func (r *GeneratedDataRepository) Delete(id uint) error {
 }
 
 // DeleteByIDs 批量删除数据
-func (r *GeneratedDataRepository) DeleteByIDs(ids []uint) error {
-	return r.db.Delete(&models.GeneratedData{}, ids).Error
+func (r *GeneratedDataRepository) DeleteByIDs(ids []uint) (int64, error) {
+	result := r.db.Delete(&models.GeneratedData{}, ids)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
 }
 
 // DeleteByTaskID 根据任务ID删除数据

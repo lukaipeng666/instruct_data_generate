@@ -43,14 +43,14 @@ def get_config(key_path: str, default: Any = None) -> Any:
     获取配置值，支持点号分隔的路径
     
     Args:
-        key_path: 配置键路径，如 "web_service.port"
+        key_path: 配置键路径，如 "server.port"
         default: 默认值
         
     Returns:
         配置值
         
     Example:
-        get_config("web_service.port", 5000)
+        get_config("server.port", 18080)
         get_config("jwt.secret_key", "")
     """
     config = load_config()
@@ -71,9 +71,9 @@ def get_config(key_path: str, default: Any = None) -> Any:
 def get_web_config() -> Dict[str, Any]:
     """获取 Web 服务配置"""
     return {
-        'host': get_config('web_service.host', '0.0.0.0'),
-        'port': get_config('web_service.port', 5000),
-        'production_mode': get_config('web_service.production_mode', False),
+        'host': get_config('server.host', '0.0.0.0'),
+        'port': get_config('server.port', 18080),
+        'production_mode': get_config('server.production_mode', False),
     }
 
 

@@ -78,8 +78,8 @@ class PipelineDataGenerator:
     
     def update_task_progress(self, task_id: str, progress_data: dict):
         """
-        更新任务进度到 Redis
-        
+        更新任务进度到 Redis（使用Hash格式，避免覆盖字符数）
+
         Args:
             task_id: 任务ID
             progress_data: 进度数据字典
@@ -88,8 +88,13 @@ class PipelineDataGenerator:
         if redis_client:
             try:
                 redis_key = f"task_progress:{task_id}"
-                # 更新进度数据（JSON格式）
-                redis_client.set(redis_key, json.dumps(progress_data, ensure_ascii=False))
+                # 使用Hash格式更新进度数据（避免覆盖input_chars和output_chars字段）
+                # 这些字段由Go后端管理，Python不应该更新它们
+                excluded_keys = {'input_chars', 'output_chars'}
+                for key, value in progress_data.items():
+                    if key not in excluded_keys:
+                        # 将值转换为JSON字符串（保持数据结构）
+                        redis_client.hset(redis_key, key, json.dumps(value, ensure_ascii=False))
                 # 设置过期时间（24小时）
                 redis_client.expire(redis_key, 86400)
             except Exception as e:

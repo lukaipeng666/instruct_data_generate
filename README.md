@@ -95,12 +95,6 @@ cd frontend && npm install && cd ..
 
 #### 3️⃣ 配置项目
 
-**复制示例配置文件：**
-
-```bash
-cp backend/config/config.example.yaml backend/config/config.yaml
-```
-
 **生成 JWT 密钥（生产环境必须使用）：**
 
 ```bash
@@ -113,11 +107,22 @@ openssl rand -base64 32
 python3 -c "import bcrypt; print(bcrypt.hashpw('你的密码'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'))"
 ```
 
-**编辑配置文件 `backend/config/config.yaml`：**
+**编辑配置文件 `config/config.yaml`：**
 
 ```yaml
-# 项目根目录
-project_root: "/path/to/your/project"
+# 项目根目录（用于执行 Python 脚本）
+project_root: "."
+
+# 服务配置
+server:
+  host: "0.0.0.0"
+  port: 18081
+  # 生产模式：禁用 API 文档
+  production_mode: false
+
+# 前端配置
+frontend:
+  url: "http://localhost:13001"
 
 # JWT 认证配置
 jwt:
@@ -129,9 +134,18 @@ jwt:
 admin:
   username: "admin"
   password: "生成的密码哈希"  # 填入上面生成的哈希值
+
+# Redis 服务配置（用于模型调用限流和任务进度）
+redis_service:
+  host: "localhost"
+  port: 16380
+  db: 0
+  password: null
+  max_wait_time: 300
+  default_max_concurrency: 16
 ```
 
-> 💡 详细配置说明请参考 `backend/config/config.example.yaml`
+> 💡 配置文件位于 `config/config.yaml`，包含所有服务的配置（Go 后端、前端、Redis、模型服务等）
 
 #### 4️⃣ 启动服务
 
@@ -150,9 +164,15 @@ admin:
 
 | 服务 | 地址 | 说明 |
 |:---:|:---:|:---|
-| 🎨 前端 | http://localhost:13000 | Web 界面 |
-| 🔌 后端 API | http://localhost:18080 | RESTful API |
-| 📚 API 文档 | http://localhost:18080/swagger/index.html | Swagger 文档 |
+| 🎨 前端 | http://localhost:13001 | Web 界面 |
+| 🔌 后端 API | http://localhost:18081 | RESTful API |
+
+## 💾 数据库
+
+项目使用 SQLite 作为数据库，数据库文件位于：
+- **开发环境**: `backend/database/app.db`
+
+数据库会自动初始化，无需手动创建。
 
 ## 👤 默认账户
 
@@ -295,9 +315,9 @@ tail -f log/redis.log
 
 ## 📚 文档
 
-- [API 文档](http://localhost:18080/swagger/index.html) - Swagger 接口文档
-- [配置指南](backend/config/config.example.yaml) - 详细配置说明
+- [配置指南](config/config.yaml) - 详细配置说明
 - [开发指南](#-开发指南) - 开发相关说明
+- API 接口文档：启动服务后访问 `http://localhost:18081/api/` 查看可用接口
 
 ## 🤝 贡献
 

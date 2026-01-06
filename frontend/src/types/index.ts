@@ -105,6 +105,9 @@ export interface Report {
   // 审核状态
   confirmed_count?: number;
   is_fully_reviewed?: boolean;
+  // 字符消耗
+  input_chars?: number;
+  output_chars?: number;
 }
 
 export interface GeneratedDataItem {

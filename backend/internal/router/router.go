@@ -131,6 +131,7 @@ func SetupRouter(
 				c.Request.URL.RawQuery = "format=csv"
 				generatedDataHandler.DownloadTaskData(c)
 			})
+			authorized.POST("/generated_data/add/:task_id", generatedDataHandler.AddData)
 			authorized.PUT("/generated_data/:data_id", generatedDataHandler.UpdateData)
 			authorized.POST("/generated_data/:data_id/confirm", generatedDataHandler.ConfirmData)
 			authorized.DELETE("/generated_data/batch", generatedDataHandler.DeleteBatch)

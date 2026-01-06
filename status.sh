@@ -19,7 +19,7 @@ redis_config = config.get('redis_service', {})
 print(redis_config.get('host', 'localhost'))
 print(redis_config.get('port', 16379))
 
-web_config = config.get('web_service', {})
+web_config = config.get('server', {})
 print(web_config.get('port', 18080))
 
 frontend_config = config.get('frontend', {})

@@ -3,23 +3,23 @@
 # 项目根目录（用于执行 Python 脚本）
 project_root: "."
 
-# Web 服务配置
-web_service:
+# 服务配置
+server:
   host: "0.0.0.0"
-  port: 18080
+  port: 18081
   # 生产模式：禁用 API 文档（/docs, /redoc, /openapi.json）
   # 开发时设为 false，部署时设为 true
   production_mode: false
 
 # 前端配置
 frontend:
-  url: "http://localhost:13000"
+  url: "http://localhost:13001"
 
 # CORS 配置（跨域访问）
 cors:
   # 允许的跨域源列表
   origins:
-    - "http://localhost:13000"
+    - "http://localhost:13001"
   allow_credentials: true
   allow_methods:
     - "*"
@@ -48,7 +48,7 @@ admin:
 # Redis 服务配置（用于模型调用限流和任务进度）
 redis_service:
   host: "localhost"
-  port: 16379
+  port: 16380
   db: 0
   password: null
   # 等待并发槽位的最大时间（秒）

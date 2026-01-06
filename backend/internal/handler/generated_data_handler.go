@@ -172,16 +172,40 @@ func (h *GeneratedDataHandler) ConfirmData(c *gin.Context) {
 
 // DeleteBatch 批量删除数据
 func (h *GeneratedDataHandler) DeleteBatch(c *gin.Context) {
-	var req dto.BatchDeleteRequest
+	var req dto.BatchDeleteGeneratedDataRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.BadRequest(c, err.Error())
 		return
 	}
 
-	if err := h.generatedDataService.DeleteBatch(req.IDs); err != nil {
+	deletedCount, err := h.generatedDataService.DeleteBatch(req.DataIDs)
+	if err != nil {
 		utils.InternalError(c, err.Error())
 		return
 	}
 
-	utils.SuccessWithMessage(c, "批量删除成功", gin.H{"success": true})
+	utils.SuccessResponse(c, gin.H{
+		"success": true,
+		"deleted_count": deletedCount,
+	})
+}
+
+// AddData 添加单条数据
+func (h *GeneratedDataHandler) AddData(c *gin.Context) {
+	taskID := c.Param("task_id")
+	userID, _ := middleware.GetUserID(c)
+
+	var req dto.AddGeneratedDataRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.BadRequest(c, err.Error())
+		return
+	}
+
+	dataID, err := h.generatedDataService.AddData(taskID, userID, req.Content)
+	if err != nil {
+		utils.InternalError(c, err.Error())
+		return
+	}
+
+	utils.SuccessWithMessage(c, "添加成功", gin.H{"data_id": dataID})
 }

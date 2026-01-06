@@ -36,17 +36,18 @@ from config.tools import (
     get_prompt_builder,
     get_format_evaluator
 )
-from config import get_default_services, get_default_model
+from config import get_default_services, get_default_model, get_model_services_config
 # 导入模型调用函数
 from call_model.model_call import call_model_api
 
 # 从配置获取默认值
-_default_api_base = get_default_services()[0] if get_default_services() else "http://localhost:16466/v1"
+_default_services = get_default_services()
+_default_api_base = _default_services[0] if _default_services else ""
 _default_model = get_default_model()
 
 
 class DataGenerator:
-    def __init__(self, 
+    def __init__(self,
                  api_base: str = None,
                  model: str = None,
                  max_concurrent: int = 5,
@@ -62,7 +63,8 @@ class DataGenerator:
                  use_proxy: bool = False,
                  top_p: float = 1.0,
                  max_tokens: int = 8192,
-                 timeout: int = 600):
+                 timeout: int = 600,
+                 task_id: str = ""):
         self.api_base = api_base or _default_api_base
         self.model = model or _default_model
         self.max_concurrent = max_concurrent
@@ -71,7 +73,8 @@ class DataGenerator:
         self.min_score = min_score  # 最低分数要求
         self.task_type = task_type
         self.variants_per_sample = variants_per_sample
-        
+        self.task_id = task_id  # 任务ID，用于字符数统计
+
         # 模型调用相关参数
         self.api_key = api_key
         self.is_vllm = is_vllm
@@ -79,7 +82,7 @@ class DataGenerator:
         self.top_p = top_p
         self.max_tokens = max_tokens
         self.timeout = timeout
-        
+
         # 使用锁保护统计数据，确保多线程安全
         self._stats_lock = Lock()
         self.stats = {
@@ -91,7 +94,7 @@ class DataGenerator:
             'api_errors': 0,
             'sample_retries': 0  # 新增：样本重试次数统计
         }
-        
+
         # 获取可配置的函数
         self.generation_prompt_builder = get_prompt_builder('generation')
         self.evaluation_prompt_builder = get_prompt_builder('evaluation')
@@ -116,7 +119,7 @@ class DataGenerator:
                 "content": prompt
             }
         ]
-        
+
         try:
             # 使用 call_model_api 进行调用（在线程池中运行同步函数）
             loop = asyncio.get_event_loop()
@@ -133,12 +136,13 @@ class DataGenerator:
                     timeout=self.timeout,
                     is_vllm=self.is_vllm,
                     top_p=self.top_p,
-                    use_proxy=self.use_proxy
+                    use_proxy=self.use_proxy,
+                    task_id=self.task_id
                 )
             )
-            
+
             # 检查是否为错误响应
-            if response and (response.startswith("模型调用失败") or 
+            if response and (response.startswith("模型调用失败") or
                             response.startswith("API Connection Error") or
                             response.startswith("Rate Limit Error") or
                             response.startswith("代理调用失败")):
@@ -146,9 +150,9 @@ class DataGenerator:
                 with self._stats_lock:
                     self.stats['api_errors'] += 1
                 return None
-            
+
             return response.strip() if response else None
-            
+
         except Exception as e:
             print(f"API调用异常: {type(e).__name__}: {str(e)}")
             print(f"详细堆栈: {traceback.format_exc()}")
@@ -182,33 +186,10 @@ class DataGenerator:
                     elif isinstance(data, dict):
                         return [data]
                 except json.JSONDecodeError as e:
-                    print(f"❌ JSON解析失败: {e}")
+                    print(f"❌ JSON解析失败: {e} 原始内容是：{json_str}")
+            else:
+                print(f"❌ 未找到有效的JSON Markdown格式 原始内容是：{response}")
             
-            # 方法2: 尝试直接解析整个响应
-            try:
-                data = json.loads(response.strip())
-                if isinstance(data, list):
-                    return data
-                elif isinstance(data, dict):
-                    return [data]
-            except json.JSONDecodeError:
-                pass
-            
-            # 方法3: 查找以[开头]结尾的数组
-            # 使用贪婪匹配(.*)匹配到最后一个]，避免嵌套数组匹配错误
-            array_pattern = r'\[.*\]'
-            array_match = re.search(array_pattern, response, re.DOTALL)
-            if array_match:
-                array_str = array_match.group(0)
-                try:
-                    data = json.loads(array_str)
-                    if isinstance(data, list):
-                        return data
-                except json.JSONDecodeError as e:
-                    print(f"❌ 数组模式JSON解析失败: {e}")
-            
-            # 所有方法都失败
-            print("❌ 未找到有效的JSON内容")
             return []
             
         except Exception as e:
@@ -330,11 +311,14 @@ class DataGenerator:
                     Assistant += 1
                 elif role == 'Human':
                     Human += 1
+
             # 规则评分
             rule_score = 0
             model_score = 0
             if Assistant == 1 and Human == 1:
                 rule_score = self.format_evaluator(assistant_text)
+                if rule_score < 10:
+                    print(f"规则评估不通过，默认模型评估为0分，原始内容为：{assistant_text}")
                 if rule_score == 10:
                     # 模型评分
                     eval_prompt = self.evaluation_prompt_builder(sample_data, generated_data, self.special_prompt)
@@ -356,7 +340,7 @@ class DataGenerator:
             with self._stats_lock:
                 self.stats['data_evaluated'] += 1
             return model_score, rule_score
-            
+
         except Exception as e:
             print(f"❌ 评估数据时出错: {str(e)}")
             return 0, 0
@@ -649,7 +633,8 @@ async def main_process_from_samples(samples: List[Dict[str, Any]],
             use_proxy=use_proxy,
             top_p=top_p,
             max_tokens=max_tokens,
-            timeout=timeout
+            timeout=timeout,
+            task_id=task_id
         )
         
         # 开始生成数据（直接从内存中的样本）

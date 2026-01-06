@@ -276,12 +276,17 @@ func (h *DataFileHandler) BatchDeleteContent(c *gin.Context) {
 		return
 	}
 
-	if err := h.dataFileService.BatchDeleteContent(uint(fileID), userID, req.Indices); err != nil {
+	deletedCount, err := h.dataFileService.BatchDeleteContent(uint(fileID), userID, req.Indices)
+	if err != nil {
 		utils.InternalError(c, err.Error())
 		return
 	}
 
-	utils.SuccessWithMessage(c, "批量删除成功", gin.H{"success": true})
+	utils.SuccessResponse(c, gin.H{
+		"success": true,
+		"deleted_count": deletedCount,
+		"remaining_count": 0, // 将在后续更新
+	})
 }
 
 // BatchDownloadFiles 批量下载文件

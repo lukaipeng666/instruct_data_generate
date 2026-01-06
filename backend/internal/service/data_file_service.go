@@ -224,15 +224,15 @@ func (s *DataFileService) AddFileContent(fileID uint, userID uint, content map[s
 }
 
 // BatchDeleteContent 批量删除文件内容
-func (s *DataFileService) BatchDeleteContent(fileID uint, userID uint, indices []int) error {
+func (s *DataFileService) BatchDeleteContent(fileID uint, userID uint, indices []int) (int, error) {
 	file, err := s.fileRepo.GetByIDAndUserID(fileID, userID)
 	if err != nil {
-		return fmt.Errorf("文件不存在或无权访问")
+		return 0, fmt.Errorf("文件不存在或无权访问")
 	}
 
 	data, err := utils.ParseJSONL(file.FileContent)
 	if err != nil {
-		return fmt.Errorf("解析文件内容失败: %w", err)
+		return 0, fmt.Errorf("解析文件内容失败: %w", err)
 	}
 
 	// 创建索引map用于快速查找
@@ -249,14 +249,21 @@ func (s *DataFileService) BatchDeleteContent(fileID uint, userID uint, indices [
 		}
 	}
 
+	// 计算实际删除的数量（原始长度 - 新长度）
+	deletedCount := len(data) - len(newData)
+
 	// 转换回JSONL
 	newContent, err := utils.ConvertToJSONL(newData)
 	if err != nil {
-		return fmt.Errorf("序列化内容失败: %w", err)
+		return 0, fmt.Errorf("序列化内容失败: %w", err)
 	}
 
 	file.FileContent = newContent
-	return s.fileRepo.Update(file)
+	if err := s.fileRepo.Update(file); err != nil {
+		return 0, err
+	}
+
+	return deletedCount, nil
 }
 
 // DownloadFile 下载文件

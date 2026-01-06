@@ -275,20 +275,21 @@ export default function DataFileEditorPage() {
   // 批量删除选中的数据
   const handleBatchDelete = async (indicesToDelete: number[]) => {
     if (!fileId || indicesToDelete.length === 0) return;
-    
+
     if (indicesToDelete.length >= dataItems.length) {
       setError('不能删除所有数据，文件至少需要保留一条数据');
       return;
     }
-    
+
     // 转换为原始索引
     const originalIndices = indicesToDelete.map(i => dataItems[i].index);
-    
+
     try {
       setDeleting(true);
       setError('');
       const result = await dataService.batchDeleteDataFileItems(parseInt(fileId), originalIndices);
-      setSuccess(`成功删除 ${result.deleted_count} 条数据`);
+      const deletedCount = result.deleted_count ?? result.deletedCount ?? 0;
+      setSuccess(`成功删除 ${deletedCount} 条数据`);
       setSelectedItems(new Set());
       setRangeStart('');
       setRangeEnd('');

@@ -32,7 +32,7 @@ async def main():
     parser.add_argument('--data-rounds', type=int, default=10, help='数据使用轮次')
     parser.add_argument('--retry-times', default=3, type=int, help='重试次数')
     parser.add_argument('--special-prompt', default="", type=str, help='特殊任务提示词')
-    parser.add_argument('--directions', nargs='*', default=['信用卡年费', '股票爆仓', '基金赎回'],help='需要构造的题材，可输入多个，如：--directions 信用卡年费 股票爆仓')
+    parser.add_argument('--directions', nargs='*', required=True, help='需要构造的题材，可输入多个，如：--directions 信用卡年费 股票爆仓')
     parser.add_argument('--output', default='', type=str, help='输出文件名（已弃用，保留用于兼容）')
     
     # 模型调用相关参数
